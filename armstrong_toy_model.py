@@ -184,4 +184,3 @@ def play_interactive() -> None:
 
 if __name__ == "__main__":
     play_interactive()
-
