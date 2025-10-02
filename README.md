@@ -1,1 +1,18 @@
 # llm-reward-hacking-demos
+
+Small demos exploring reward hacking and treacherous behavior in compact gridworlds.
+
+- Design doc: `docs/DESIGN.md`
+- Phase 1 prototype:
+  - Env: `armstrong_toy_model.py` (camera-blocking, per-hit Bernoulli reward)
+  - Training: `train_armstrong_art.py`
+- Scaffolding:
+  - Configs: `configs/phase1.yaml`, `configs/phase2.yaml`
+  - Scripts: `scripts/run_phase1.sh`, `scripts/run_phase2.sh`, `scripts/eval.sh`
+  - Env wrappers: `envs/armstrong_env.py` (minimal), `envs/phase2_link.py` (placeholder)
+  - Eval helpers: `eval/metrics.py`, `eval/plots.py`
+
+Quick start (Phase 1):
+```
+bash scripts/run_phase1.sh
+```
