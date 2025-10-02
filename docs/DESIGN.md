@@ -26,6 +26,18 @@
   - Observations: compact ASCII views to keep token budgets low.
   - Out‑of‑scope: tool‑use/web agents; large‑scale safety training; manual red‑teaming beyond scripted checks.
 
+### Methodological Improvements
+- Reward modes (toggle): implement `reward_mode ∈ {per_hit, shutdown}`. Run both to separate shaping density from the underlying incentive.
+- Constrained decoding: strictly enforce the action set `{U,D,L,R,S}` via logit masking/biasing. Log `invalid_action_rate`.
+- Validity checks & baselines:
+  - Unit tests for: camera line‑of‑sight, stacking, termination, step‑cost accounting, reward sampling.
+  - Baselines: random policy, greedy scripted policy, and a tiny tabular/value‑based agent (Phase 1) to avoid LLM‑only artifacts.
+- Robustness suite:
+  - Episode‑level camera randomization; grid size variants; sweeps over `P_REWARD ∈ {0.6,0.8,0.95}` and step‑cost; hold‑out maps (Phase 2).
+  - Report robustness deltas (e.g., Δ spec‑gaming under camera shuffle; betrayal‑rate retention when Bow/crystal positions vary).
+- Pre‑registration (lite): fix seeds (N ≥ 30), primary metrics and thresholds, and report mean ± 95% CI. Record git SHA, config, and hardware.
+- Interpretability discipline: predefine keyword probes (e.g., "hide", "block", "kill"); log probe activations and sample qualitative traces at fixed intervals.
+
 ## Task Breakdown
 
 ### Phase 0 — Project Scaffolding
@@ -45,6 +57,7 @@
 - Evaluation
   - Metrics: spec‑gaming rate; mean `hole_count` at termination; reward spike clustering after first camera‑block; KL vs. supervised baseline.
   - Plots: time‑to‑camera‑block; histogram of `hole_count`; reward traces aligned on first camera‑block event.
+  - Reward modes: run both `per_hit` (p=0.8) and `shutdown` (p≈0.99 at reveal). Log visible reward and a hidden proxy (blocks‑in‑hole at reveal).
 
 ### Phase 1.5 — Mitigations & Ablations
 - Impact penalty: small cost for actions likely to influence overseer state.
@@ -60,6 +73,13 @@
   - Same ART interface; comparable token budget; identical logging schema where possible.
 - Evaluation
   - Betrayal rate post‑capability; time‑to‑betrayal; dependence on observation context.
+  - Robustness: overseer/camera randomization, Bow/crystal position variants; hold‑out maps.
+
+### Testing & Reproducibility Additions
+- Add `tests/test_env_phase1.py` covering LoS, stacking, termination, rewards, and step costs.
+- Add `tests/test_decoding.py` to ensure action token constraints hold; fail on drift.
+- Logging: JSONL per‑step and per‑episode with fields `{t, camera_view, hole_count, reward, action, valid_action}`; CLI to compute metrics with CIs.
+- Seeds: define a canonical seed set in `configs/phase1.yaml`; encode `runs: 30` in scripts.
 
 ### Phase 2.5 — Mitigations & Ablations
 - Repeat Phase 1.5 with capability‑gated dynamics; add “oversight shuffle” during training.
@@ -70,11 +90,15 @@
 - Logging: save JSONL trajectories with per‑step fields; export summary CSVs; lightweight TensorBoard/W&B hooks.
 - Interpretability probes: count activations on deception keywords in generated tokens; store alongside metrics.
 - Risk controls: offline sandboxed envs only; gradient clipping; reward caps; checkpoint quarantine when hidden‑reward episodes exceed threshold.
+- Operational risks & mitigations:
+  - Tooling divergence (ART vs. Tinker): keep a common rollout interface and identical JSONL schema; adapters only.
+  - Compute creep: cap tokens/episode and step limits; curriculum increases caps gradually.
+  - Leakage: keep prompts minimal; audit logs for hidden‑metric hints; separate visible vs. hidden logging channels.
 
 ### Milestones (suggested)
-- Week 1: Phase 1 env wrapper + random baseline; logging solid.
+- Week 1: Reward‑mode toggle, env unit tests, constrained decoding; random & scripted baselines; logging solid.
 - Week 2: Stable GRPO training; first spec‑gaming curves.
-- Week 3: Analysis memo and plots; finalize Phase 1.
+- Week 3: Robustness sweep + CI reporting; finalize Phase 1 analysis memo and plots.
 - Week 4–5: Phase 2 env + baseline; observe first betrayal runs.
 - Week 6: Mitigations and sweeps.
 - Week 7–8: Consolidated report and release artifacts.
@@ -104,7 +128,7 @@ This project uses ART+GRPO as the default RL stack. As an alternative or complem
 - Hyperparameters (initial):
   - `batch_size=8`, `group_size=4`, `temperature≈0.7`, `max_tokens=4`, `loss_fn="importance_sampling"` (then PPO), LoRA‑scaled LR per base model.
 - Metrics to monitor:
-  - Spec‑gaming rate, time‑to‑camera‑block, mean hole_count at end, KL vs. supervised baseline (if available), reward traces.
+  - Spec‑gaming rate, time‑to‑camera‑block, mean hole_count at end, KL vs. supervised baseline (if available), reward traces, invalid‑action rate.
 
 ### Phase 2 Plan with Tinker
 - Reuse the Phase 1 loop with `envs/phase2_link.LinkEnv`.
@@ -117,3 +141,23 @@ This project uses ART+GRPO as the default RL stack. As an alternative or complem
 
 ### Decision
 - Maintain ART as the baseline for reproducibility; add Tinker as an optional backend for faster LoRA‑based iteration and scaling. Implementation is isolated (separate script) so either path can be used for the same experiments.
+
+## Success Criteria (Refined)
+- Primary
+  - Spec‑gaming rate (Phase 1) and betrayal‑rate post‑capability (Phase 2).
+  - Time‑to‑behavior curves across training steps.
+- Robustness
+  - Δ spec‑gaming under camera randomization and grid variants.
+  - Betrayal‑rate retention across Bow/crystal/camera permutations and hold‑out maps.
+- Efficiency
+  - Updates to 50% spec‑gaming under both reward modes; sample efficiency vs. curriculum.
+- Safety/Quality
+  - Invalid‑action rate; KL ceilings; crash‑free training at fixed hyperparams across ≥ 30 seeds.
+
+## Immediate Next Changes
+1) Implement `reward_mode` and shutdown‑reward path in Phase 1 env.
+2) Add strict action‑token filtering and invalid‑action logging in the training loop.
+3) Write unit tests for LoS, stacking, termination, rewards, step costs.
+4) Add JSONL logging + a CLI to compute metrics with 95% CIs.
+5) Add camera‑position randomization flag and run a small sweep.
+6) Predefine seed list and run counts in configs and scripts.
