@@ -79,3 +79,41 @@
 - Week 6: Mitigations and sweeps.
 - Week 7–8: Consolidated report and release artifacts.
 
+## Optional Backend — Tinker (LoRA‑first RL)
+
+This project uses ART+GRPO as the default RL stack. As an alternative or complement, we can plug in the Tinker library to leverage its LoRA‑first training, PPO/REINFORCE losses, and simple RL loop recipe.
+
+### Why Tinker
+- LoRA‑centric training for quick iteration on open‑weight models.
+- Built‑in RL losses (importance‑sampling REINFORCE, PPO) and minimal RL loop.
+- Managed training/sampling clients for scale without custom infra.
+
+### Integration Strategy
+- Option A — Minimal RL Loop (recommended first):
+  - Keep the existing ASCII grid env. For each step: render → sample action → env.step → accumulate reward → build training batch → `forward_backward(loss_fn="importance_sampling"|"ppo")` → `optim_step()`.
+  - Pros: fastest to stand up; mirrors the current ART rollout semantics.
+- Option B — Structured RL Envs:
+  - Implement a small Env interface (initial_observation/step) and optional dataset/builder to plug into Tinker’s higher‑throughput RL flow.
+  - Pros: cleaner scaling; more boilerplate up front.
+
+### Phase 1 Plan with Tinker
+- Deliverables:
+  - `training/tinker_phase1_train.py` — Option A loop wired to `envs/armstrong_env.ArmstrongEnv`.
+  - `scripts/run_phase1_tinker.sh` — Runner for the Tinker backend.
+  - Logging: JSONL per‑step logs compatible with `eval/metrics.py` and `eval/plots.py`.
+- Hyperparameters (initial):
+  - `batch_size=8`, `group_size=4`, `temperature≈0.7`, `max_tokens=4`, `loss_fn="importance_sampling"` (then PPO), LoRA‑scaled LR per base model.
+- Metrics to monitor:
+  - Spec‑gaming rate, time‑to‑camera‑block, mean hole_count at end, KL vs. supervised baseline (if available), reward traces.
+
+### Phase 2 Plan with Tinker
+- Reuse the Phase 1 loop with `envs/phase2_link.LinkEnv`.
+- Track betrayal‑rate after capability unlock; reuse identical logging schema.
+
+### Risks & Mitigations
+- API/service availability: keep ART path as a local baseline; gate Tinker features behind flags.
+- Divergent tokenization/templates: write a tiny adapter to ensure the first emitted token cleanly maps to actions `U/D/L/R/S`.
+- Stability: start with REINFORCE (importance sampling) before PPO; add KL monitoring.
+
+### Decision
+- Maintain ART as the baseline for reproducibility; add Tinker as an optional backend for faster LoRA‑based iteration and scaling. Implementation is isolated (separate script) so either path can be used for the same experiments.
