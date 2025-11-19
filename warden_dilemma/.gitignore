@@ -17,6 +17,9 @@ build/
 .env.test.local
 .env.production.local
 
+# Exception: Allow client/.env with safe defaults
+!client/.env
+
 # Logs
 logs
 *.log

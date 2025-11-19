@@ -29,26 +29,31 @@ A web-based platform for studying strategic behavior in N-player iterated prison
 pnpm install
 
 # Set up environment variables
-cp .env.example .env
-# Edit .env with your database credentials and API keys
+cd server
+cp ../.env.example .env
+# Edit .env with your database credentials
 
 # Run database migrations
-cd server && pnpm db:migrate
+pnpm db:migrate
+cd ..
 
-# Start development servers
+# Start server (builds frontend and serves it)
 pnpm dev
 ```
 
-This will start:
-- Client dev server: `http://localhost:5173`
-- Server (Colyseus + API): `http://localhost:3000`
+This will:
+1. Build the frontend (React → static files)
+2. Start the server at `http://localhost:3000`
+3. Serve both frontend and API from single server
+
+**Open**: `http://localhost:3000`
 
 ### Running an Experiment
 
-1. Navigate to `http://localhost:5173/experiment/new`
+1. Navigate to `http://localhost:3000/create`
 2. Configure game parameters (players, rounds, payoff structure)
 3. Launch the experiment (generates a lobby code)
-4. Players join via lobby code
+4. Players join via lobby code at `http://localhost:3000`
 5. Monitor real-time from experimenter dashboard
 
 ## Project Structure

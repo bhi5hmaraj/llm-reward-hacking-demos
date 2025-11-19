@@ -8,7 +8,19 @@
 import { Client, Room } from 'colyseus.js';
 import { GameState, ChatMessage, PlayerAction } from '../types';
 
-const COLYSEUS_URL = import.meta.env.VITE_COLYSEUS_URL || 'ws://localhost:3000';
+// Auto-detect WebSocket URL
+// If VITE_COLYSEUS_URL is set, use it (separate dev server)
+// Otherwise, use same-origin WebSocket (production/built)
+const getColyseusURL = () => {
+  const envURL = import.meta.env.VITE_COLYSEUS_URL;
+  if (envURL) return envURL;
+
+  // Same-origin WebSocket
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}`;
+};
+
+const COLYSEUS_URL = getColyseusURL();
 
 /**
  * Singleton Colyseus client
