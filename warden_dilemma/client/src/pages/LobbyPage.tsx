@@ -119,7 +119,7 @@ export default function LobbyPage() {
           </p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {waitingPlayers.map((player, i) => (
+            {waitingPlayers.map((player) => (
               <div
                 key={player.sessionId}
                 style={{

@@ -4,17 +4,17 @@
  * HTTP client for REST API endpoints.
  */
 
-import { CreateExperimentRequest, CreateExperimentResponse, ExperimentConfig } from '../types';
+import { CreateExperimentRequest, CreateExperimentResponse } from '../types';
 
 // Auto-detect API URL
 // If VITE_API_URL is set, use it (separate dev server)
-// Otherwise, use same-origin API (production/built)
+// Otherwise, use same-origin API (production/built) under /warden_dilemma
 const getAPIURL = () => {
   const envURL = import.meta.env.VITE_API_URL;
   if (envURL) return envURL;
 
-  // Same-origin API
-  return `${window.location.origin}/api`;
+  // Same-origin API under /warden_dilemma subpath
+  return `${window.location.origin}/warden_dilemma/api`;
 };
 
 const API_URL = getAPIURL();
@@ -100,7 +100,7 @@ class APIService {
    * Health check
    */
   async healthCheck(): Promise<any> {
-    const response = await fetch(`${API_URL.replace('/api', '')}/health`);
+    const response = await fetch(`${window.location.origin}/warden_dilemma/health`);
     return response.json();
   }
 }

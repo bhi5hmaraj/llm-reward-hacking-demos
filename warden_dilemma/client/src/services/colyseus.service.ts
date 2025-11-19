@@ -6,7 +6,7 @@
  */
 
 import { Client, Room } from 'colyseus.js';
-import { GameState, ChatMessage, PlayerAction } from '../types';
+import { PlayerAction } from '../types';
 
 // Auto-detect WebSocket URL
 // If VITE_COLYSEUS_URL is set, use it (separate dev server)

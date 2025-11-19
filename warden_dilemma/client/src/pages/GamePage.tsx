@@ -73,22 +73,22 @@ export default function GamePage() {
       });
 
       // Listen for game state changes
-      room.state.listen('phase', (value) => setPhase(value));
-      room.state.listen('currentRound', (value) => setCurrentRound(value));
-      room.state.listen('totalRounds', (value) => setTotalRounds(value));
-      room.state.listen('phaseEndsAt', (value) => setPhaseEndsAt(value));
-      room.state.listen('currentPayoffMatrix', (value) => {
+      room.state.listen('phase', (value: GamePhase) => setPhase(value));
+      room.state.listen('currentRound', (value: number) => setCurrentRound(value));
+      room.state.listen('totalRounds', (value: number) => setTotalRounds(value));
+      room.state.listen('phaseEndsAt', (value: number) => setPhaseEndsAt(value));
+      room.state.listen('currentPayoffMatrix', (value: string) => {
         if (value) {
           setPayoffMatrix(JSON.parse(value));
         }
       });
 
       // Listen for player updates
-      room.state.players.onAdd = (player, key) => {
+      room.state.players.onAdd = (player: any, key: string) => {
         console.log('Player added:', key, player);
       };
 
-      room.state.players.onChange = (player, key) => {
+      room.state.players.onChange = (_player: any, _key: string) => {
         setPlayers(new Map(room.state.players));
       };
 
