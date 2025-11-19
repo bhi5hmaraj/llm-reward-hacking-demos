@@ -4,15 +4,15 @@
   "private": true,
   "description": "A platform for studying strategic behavior in N-player iterated prisoner's dilemma games",
   "scripts": {
-    "dev": "pnpm build:client && pnpm --filter server dev",
-    "dev:watch": "concurrently \"pnpm --filter client dev:watch\" \"pnpm --filter server dev\"",
-    "dev:separate": "concurrently \"pnpm --filter server dev\" \"pnpm --filter client dev\"",
+    "dev": "pnpm build:client && pnpm --filter warden-dilemma-server dev",
+    "dev:watch": "concurrently \"pnpm --filter warden-dilemma-client dev:watch\" \"pnpm --filter warden-dilemma-server dev\"",
+    "dev:separate": "concurrently \"pnpm --filter warden-dilemma-server dev\" \"pnpm --filter warden-dilemma-client dev\"",
     "build": "pnpm build:client && pnpm build:server",
-    "build:client": "pnpm --filter client build",
-    "build:server": "pnpm --filter server build",
-    "start": "pnpm --filter server start",
-    "test": "pnpm --filter server test && pnpm --filter client test",
-    "clean": "pnpm --filter server clean && pnpm --filter client clean"
+    "build:client": "pnpm --filter warden-dilemma-client build",
+    "build:server": "pnpm --filter warden-dilemma-server build",
+    "start": "pnpm --filter warden-dilemma-server start",
+    "test": "pnpm --filter warden-dilemma-server test && pnpm --filter warden-dilemma-client test",
+    "clean": "pnpm --filter warden-dilemma-server clean && pnpm --filter warden-dilemma-client clean"
   },
   "workspaces": [
     "client",

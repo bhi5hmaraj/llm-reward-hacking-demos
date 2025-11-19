@@ -1,7 +1,7 @@
 /**
  * Experiments API
  *
- * REST endpoints for experiment CRUD operations.
+ * REST endpoints for experiment CRUD operations using Redis storage.
  *
  * Endpoints:
  * - POST /api/experiments - Create new experiment
@@ -12,7 +12,13 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { prisma } from '../services/database.service';
+import {
+  saveExperiment,
+  getExperiment,
+  listExperiments,
+  deleteExperiment,
+  getGameResult
+} from '../services/redis.service';
 import { logger } from '../services/logger.service';
 import {
   ExperimentConfig,
@@ -22,23 +28,12 @@ import {
 } from '../types';
 import { v4 as uuid } from 'uuid';
 
-const router = Router();
+const router: Router = Router();
 
 /**
  * Create new experiment
  *
  * POST /api/experiments
- *
- * Body: {
- *   name: string,
- *   config: ExperimentConfig,
- *   hypothesis?: Hypothesis
- * }
- *
- * Returns: {
- *   experimentId: string,
- *   lobbyCode: string
- * }
  */
 router.post('/experiments', async (req: Request, res: Response) => {
   try {
@@ -58,28 +53,31 @@ router.post('/experiments', async (req: Request, res: Response) => {
     }
 
     // Create experiment
-    const experiment = await prisma.experiment.create({
-      data: {
-        name,
-        config: config as any,
-        hypothesis: hypothesis as any,
-        status: 'SETUP',
-        createdBy: 'default-user', // TODO: Get from auth
-      },
-    });
+    const experimentId = uuid();
+    const experiment = {
+      id: experimentId,
+      name,
+      config,
+      hypothesis,
+      status: 'SETUP',
+      createdAt: new Date().toISOString(),
+      currentRound: 0,
+    };
+
+    await saveExperiment(experimentId, experiment);
 
     logger.info('Experiment created', {
-      experimentId: experiment.id,
+      experimentId,
       name,
       numPlayers: config.numPlayers,
       numRounds: config.numRounds,
     });
 
     // Generate simple lobby code (last 6 chars of UUID)
-    const lobbyCode = experiment.id.slice(-6).toUpperCase();
+    const lobbyCode = experimentId.slice(-6).toUpperCase();
 
     const response: CreateExperimentResponse = {
-      experimentId: experiment.id,
+      experimentId,
       lobbyCode,
     };
 
@@ -99,13 +97,12 @@ router.get('/experiments', async (req: Request, res: Response) => {
   try {
     const { status } = req.query;
 
-    const experiments = await prisma.experiment.findMany({
-      where: status ? { status: status as any } : undefined,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        gameSession: true,
-      },
-    });
+    let experiments = await listExperiments();
+
+    // Filter by status if provided
+    if (status) {
+      experiments = experiments.filter((exp: any) => exp.status === status);
+    }
 
     res.json({ experiments });
   } catch (error) {
@@ -123,15 +120,7 @@ router.get('/experiments/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const experiment = await prisma.experiment.findUnique({
-      where: { id },
-      include: {
-        gameSession: true,
-        rounds: {
-          orderBy: { roundNumber: 'asc' },
-        },
-      },
-    });
+    const experiment = await getExperiment(id);
 
     if (!experiment) {
       return res.status(404).json({ error: 'Experiment not found' });
@@ -153,58 +142,24 @@ router.get('/experiments/:id/results', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const experiment = await prisma.experiment.findUnique({
-      where: { id },
-      include: {
-        rounds: {
-          orderBy: { roundNumber: 'asc' },
-        },
-        chatLogs: {
-          orderBy: { timestamp: 'asc' },
-        },
-      },
-    });
-
+    const experiment = await getExperiment(id);
     if (!experiment) {
       return res.status(404).json({ error: 'Experiment not found' });
     }
 
+    // Get game result (stored when game ends)
+    const result = await getGameResult(id);
+
     // Calculate basic metrics
-    const metrics = calculateMetrics(experiment);
+    const metrics = result ? calculateMetrics(result) : null;
 
     res.json({
       experiment,
+      result,
       metrics,
     });
   } catch (error) {
     logger.error('Failed to get experiment results', error as Error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-/**
- * Get experiment chat logs
- *
- * GET /api/experiments/:id/chats
- */
-router.get('/experiments/:id/chats', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { round } = req.query;
-
-    const where: any = { experimentId: id };
-    if (round) {
-      where.roundNumber = parseInt(round as string);
-    }
-
-    const chatLogs = await prisma.chatMessage.findMany({
-      where,
-      orderBy: { timestamp: 'asc' },
-    });
-
-    res.json({ chatLogs });
-  } catch (error) {
-    logger.error('Failed to get chat logs', error as Error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -218,9 +173,7 @@ router.delete('/experiments/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    await prisma.experiment.delete({
-      where: { id },
-    });
+    await deleteExperiment(id);
 
     logger.info('Experiment deleted', { experimentId: id });
 
@@ -259,10 +212,10 @@ function validateConfig(config: ExperimentConfig): string | null {
 }
 
 /**
- * Calculate basic metrics from experiment data
+ * Calculate basic metrics from game result
  */
-function calculateMetrics(experiment: any) {
-  const rounds = experiment.rounds || [];
+function calculateMetrics(result: any) {
+  const rounds = result.rounds || [];
 
   if (rounds.length === 0) {
     return {
