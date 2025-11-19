@@ -14,7 +14,7 @@
 import { Room, Client } from 'colyseus';
 import { LobbyState, WaitingPlayer } from './schemas/LobbyState';
 import { logger } from '../services/logger.service';
-import { prisma } from '../services/database.service';
+import { getExperiment, saveExperiment } from '../services/redis.service';
 import { ExperimentConfig } from '../types';
 
 interface LobbyRoomOptions {
@@ -57,9 +57,7 @@ export class LobbyRoom extends Room<LobbyState> {
     );
 
     // Update experiment name
-    const experiment = await prisma.experiment.findUnique({
-      where: { id: this.experimentId },
-    });
+    const experiment = await getExperiment(this.experimentId);
     if (experiment) {
       this.state.experimentName = experiment.name;
     }
@@ -79,12 +77,10 @@ export class LobbyRoom extends Room<LobbyState> {
   }
 
   /**
-   * Load experiment configuration from database
+   * Load experiment configuration from Redis
    */
   private async loadExperimentConfig(): Promise<void> {
-    const experiment = await prisma.experiment.findUnique({
-      where: { id: this.experimentId },
-    });
+    const experiment = await getExperiment(this.experimentId);
 
     if (!experiment) {
       throw new Error(`Experiment not found: ${this.experimentId}`);
@@ -239,8 +235,8 @@ export class LobbyRoom extends Room<LobbyState> {
     });
 
     try {
-      // Create GameRoom
-      const gameRoom = await this.presence.create('game', {
+      // Create GameRoom using matchmaker
+      const gameRoom = await (this.presence as any).create('game', {
         experimentId: this.experimentId,
         playerAssignments: Object.fromEntries(this.playerSlotAssignments),
       });
@@ -255,11 +251,12 @@ export class LobbyRoom extends Room<LobbyState> {
         gameRoomId: gameRoom.roomId,
       });
 
-      // Update experiment status in database
-      await prisma.experiment.update({
-        where: { id: this.experimentId },
-        data: { status: 'IN_PROGRESS' },
-      });
+      // Update experiment status in Redis
+      const experiment = await getExperiment(this.experimentId);
+      if (experiment) {
+        experiment.status = 'IN_PROGRESS';
+        await saveExperiment(this.experimentId, experiment);
+      }
 
       // Disconnect lobby after short delay (allows clients to receive message)
       setTimeout(() => {

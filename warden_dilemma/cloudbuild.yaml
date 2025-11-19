@@ -1,0 +1,100 @@
+# Cloud Build Configuration for Warden's Dilemma
+# This file defines the build and deployment process for Google Cloud Run
+# Triggered automatically when pushing to the main branch
+
+steps:
+  # Step 1: Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/warden-dilemma/app:$COMMIT_SHA'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/warden-dilemma/app:latest'
+      - '.'
+    dir: 'warden_dilemma'
+    id: 'build-image'
+
+  # Step 2: Push the Docker image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/warden-dilemma/app:$COMMIT_SHA'
+    id: 'push-image-sha'
+    waitFor: ['build-image']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/warden-dilemma/app:latest'
+    id: 'push-image-latest'
+    waitFor: ['build-image']
+
+  # Step 3: Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'warden-dilemma'
+      - '--image'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/warden-dilemma/app:$COMMIT_SHA'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--memory'
+      - '1Gi'
+      - '--cpu'
+      - '1'
+      - '--max-instances'
+      - '10'
+      - '--min-instances'
+      - '0'  # Scale to zero when not in use
+      - '--timeout'
+      - '300'
+      - '--set-env-vars'
+      - 'NODE_ENV=production'
+      # Secrets are mounted from Secret Manager
+      - '--set-secrets'
+      - 'UPSTASH_REDIS_REST_URL=upstash-redis-url:latest,UPSTASH_REDIS_REST_TOKEN=upstash-redis-token:latest,REDIS_URL=redis-url:latest'
+    id: 'deploy-cloud-run'
+    waitFor: ['push-image-sha', 'push-image-latest']
+
+# Images to be pushed to Artifact Registry
+images:
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/warden-dilemma/app:$COMMIT_SHA'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/warden-dilemma/app:latest'
+
+# Build options
+options:
+  # Use high-performance machine for faster builds
+  machineType: 'N1_HIGHCPU_8'
+
+  # Increase disk size for large dependencies
+  diskSizeGb: 100
+
+  # Enable logging
+  logging: CLOUD_LOGGING_ONLY
+
+  # Timeout for entire build (20 minutes)
+  timeout: '1200s'
+
+  # Substitute variables
+  substitution_option: 'ALLOW_LOOSE'
+
+# Timeout for the entire build
+timeout: 1200s
+
+# Substitutions (can be overridden in trigger)
+substitutions:
+  _SERVICE_NAME: 'warden-dilemma'
+  _REGION: 'us-central1'
+  _ARTIFACT_REGISTRY_REPO: 'warden-dilemma'
+
+# Tags for organizing builds
+tags:
+  - 'warden-dilemma'
+  - 'cloud-run'
+  - 'main-branch'

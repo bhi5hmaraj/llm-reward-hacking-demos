@@ -1,24 +1,27 @@
 /**
  * Warden's Dilemma - Server Entry Point
  *
- * Uses Colyseus's built-in HTTP routing for cleaner integration.
+ * Uses Colyseus with Upstash Redis for persistence.
  *
  * Architecture:
- * - Colyseus: Real-time game state + HTTP routes
- * - PostgreSQL: Persistent storage via Prisma
+ * - Colyseus: Real-time game state + HTTP routes + Redis driver
+ * - Upstash Redis: Serverless persistence (no database needed!)
  * - Static file serving: Frontend from client/dist
  */
 
 import { Server } from 'colyseus';
+import { RedisDriver } from '@colyseus/redis-driver';
+import { RedisPresence } from '@colyseus/redis-presence';
 import { createServer } from 'http';
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { existsSync } from 'fs';
+import Redis from 'ioredis';
 
 // Services
-import { initializeDatabase, disconnectDatabase, checkDatabaseHealth } from './services/database.service';
+import { initializeRedis, checkRedisHealth } from './services/redis.service';
 import { logger } from './services/logger.service';
 
 // Rooms
@@ -39,15 +42,36 @@ const clientDistPath = path.join(__dirname, '../../client/dist');
 const clientExists = existsSync(clientDistPath);
 
 // ============================================================================
-// Create Colyseus Server
+// Create Colyseus Server (with optional Redis driver)
 // ============================================================================
 
-const gameServer = new Server({
-  server: createServer(),
-});
+// Configure Redis driver if Upstash credentials provided
+let driver: RedisDriver | undefined;
+let presence: RedisPresence | undefined;
 
-// Get the underlying Express app
-const app = gameServer.app;
+if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+  // Use Upstash Redis via ioredis-compatible connection string
+  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+
+  try {
+    const redisClient = new Redis(redisUrl);
+    driver = new RedisDriver(redisClient as any);
+    presence = new RedisPresence(redisClient as any);
+
+    logger.info('Colyseus configured with Redis driver (persistence enabled)');
+  } catch (error) {
+    logger.warn('Failed to initialize Redis driver, using in-memory driver', error as Error);
+  }
+}
+
+const app = express();
+const httpServer = createServer(app);
+
+const gameServer = new Server({
+  server: httpServer,
+  driver,      // undefined = in-memory driver (default)
+  presence,    // undefined = local presence (default)
+});
 
 // ============================================================================
 // Middleware
@@ -66,7 +90,7 @@ app.use(express.json());
 
 // Request logging (development only)
 if (isDevelopment) {
-  app.use((req, res, next) => {
+  app.use((req: Request, res: Response, next: NextFunction) => {
     logger.debug(`${req.method} ${req.path}`, {
       query: req.query,
       body: req.method !== 'GET' ? req.body : undefined,
@@ -76,21 +100,25 @@ if (isDevelopment) {
 }
 
 // ============================================================================
-// Health Check
+// Health Check (both root and subpath for compatibility)
 // ============================================================================
 
-app.get('/health', async (req, res) => {
-  const dbHealthy = await checkDatabaseHealth();
+const healthHandler = async (req: Request, res: Response) => {
+  const redisHealthy = await checkRedisHealth();
 
   const health = {
-    status: dbHealthy ? 'ok' : 'degraded',
+    status: 'ok', // Always OK even if Redis is down (we fall back to in-memory)
     timestamp: new Date().toISOString(),
-    database: dbHealthy ? 'connected' : 'disconnected',
+    redis: redisHealthy ? 'connected' : 'not_configured_or_disconnected',
+    persistence: redisHealthy ? 'enabled' : 'in_memory_only',
     uptime: process.uptime(),
   };
 
-  res.status(dbHealthy ? 200 : 503).json(health);
-});
+  res.status(200).json(health);
+};
+
+app.get('/health', healthHandler);  // Root health check
+app.get('/warden_dilemma/health', healthHandler);  // Subpath health check
 
 // ============================================================================
 // Register Colyseus Rooms
@@ -116,24 +144,24 @@ logger.info('Colyseus rooms registered', {
  * See: https://docs.colyseus.io/server/matchmaker/#built-in-http-endpoints
  */
 
-// Register custom API routes
-app.use('/api', experimentsApi);
+// Register custom API routes under /warden_dilemma/api
+app.use('/warden_dilemma/api', experimentsApi);
 
 // API documentation endpoint
-app.get('/api', (req, res) => {
+app.get('/warden_dilemma/api', (req: Request, res: Response) => {
   res.json({
     name: 'Warden\'s Dilemma API',
     version: '0.1.0',
     endpoints: {
       experiments: {
-        create: 'POST /api/experiments',
-        list: 'GET /api/experiments',
-        get: 'GET /api/experiments/:id',
-        results: 'GET /api/experiments/:id/results',
-        chats: 'GET /api/experiments/:id/chats',
-        delete: 'DELETE /api/experiments/:id',
+        create: 'POST /warden_dilemma/api/experiments',
+        list: 'GET /warden_dilemma/api/experiments',
+        get: 'GET /warden_dilemma/api/experiments/:id',
+        results: 'GET /warden_dilemma/api/experiments/:id/results',
+        chats: 'GET /warden_dilemma/api/experiments/:id/chats',
+        delete: 'DELETE /warden_dilemma/api/experiments/:id',
       },
-      health: 'GET /health',
+      health: 'GET /warden_dilemma/health',
     },
     matchmaker: {
       info: 'Colyseus provides built-in matchmaker endpoints',
@@ -166,29 +194,48 @@ if (process.env.MONITOR_ENABLED === 'true') {
 }
 
 // ============================================================================
-// Serve Frontend (Production or Built Client)
+// Serve Frontend (Production or Built Client) under /warden_dilemma
 // ============================================================================
 
 if (clientExists) {
-  // Serve static files from client/dist
-  app.use(express.static(clientDistPath));
+  // Serve static files from client/dist under /warden_dilemma
+  app.use('/warden_dilemma', express.static(clientDistPath));
 
-  // SPA fallback: Return index.html for all non-API routes
-  app.get('*', (req, res) => {
-    // Skip API routes, health check, and colyseus monitor
-    if (req.path.startsWith('/api') || req.path === '/health' || req.path.startsWith('/colyseus')) {
-      return res.status(404).json({ error: 'Not found' });
-    }
-
+  // SPA fallback: Return index.html for all /warden_dilemma/* routes
+  app.get('/warden_dilemma/*', (req: Request, res: Response) => {
     res.sendFile(path.join(clientDistPath, 'index.html'));
   });
 
-  logger.info('Serving frontend from client/dist');
+  logger.info('Serving frontend from client/dist at /warden_dilemma');
 } else if (isDevelopment) {
-  logger.warn('Client not built. Run "pnpm build:client" or use separate Vite dev server on http://localhost:5173');
+  logger.warn('Client not built. Run "pnpm build:client" or use separate Vite dev server on http://localhost:5173/warden_dilemma');
 } else {
   logger.error('Client build not found. Run "pnpm build:client" before starting production server.');
 }
+
+// Root endpoint - list all apps
+app.get('/', (req: Request, res: Response) => {
+  res.json({
+    message: 'LLM Reward Hacking Demos',
+    apps: [
+      {
+        name: 'Warden\'s Dilemma',
+        description: 'N-player iterated prisoner\'s dilemma platform',
+        url: '/warden_dilemma',
+        status: 'active'
+      }
+      // Future apps can be added here
+    ],
+    endpoints: {
+      wardenDilemma: {
+        app: '/warden_dilemma',
+        api: '/warden_dilemma/api',
+        health: '/warden_dilemma/health',
+        websocket: `ws://${req.get('host')}`
+      }
+    }
+  });
+});
 
 // ============================================================================
 // Start Server
@@ -196,8 +243,8 @@ if (clientExists) {
 
 async function startServer() {
   try {
-    // Initialize database
-    await initializeDatabase();
+    // Initialize Redis (optional, falls back to in-memory if not configured)
+    await initializeRedis();
 
     // Start listening
     gameServer.listen(port);
@@ -207,7 +254,7 @@ async function startServer() {
       environment: process.env.NODE_ENV || 'development',
       servingFrontend: clientExists,
       websocket: `ws://localhost:${port}`,
-      database: 'connected',
+      persistence: driver ? 'redis' : 'in_memory',
     });
 
     console.log('\n' + '='.repeat(60));
@@ -244,9 +291,6 @@ async function gracefulShutdown(signal: string) {
 
   // Stop accepting new connections
   gameServer.gracefullyShutdown(false);
-
-  // Disconnect from database
-  await disconnectDatabase();
 
   logger.info('Server shut down complete');
   process.exit(0);

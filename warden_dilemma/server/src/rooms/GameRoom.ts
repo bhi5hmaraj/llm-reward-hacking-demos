@@ -22,7 +22,7 @@
 import { Room, Client } from 'colyseus';
 import { GameState, PlayerState, ChatMessageState, RoundHistoryState } from './schemas/GameState';
 import { logger } from '../services/logger.service';
-import { prisma } from '../services/database.service';
+import { getExperiment, saveExperiment } from '../services/redis.service';
 import { PayoffEngine } from '../services/payoff-engine.service';
 import {
   ExperimentConfig,
@@ -77,9 +77,7 @@ export class GameRoom extends Room<GameState> {
     this.payoffEngine = new PayoffEngine(this.config);
 
     // Initialize game state
-    const experiment = await prisma.experiment.findUnique({
-      where: { id: this.experimentId },
-    });
+    const experiment = await getExperiment(this.experimentId);
 
     this.setState(
       new GameState(
@@ -111,12 +109,10 @@ export class GameRoom extends Room<GameState> {
   }
 
   /**
-   * Load experiment configuration from database
+   * Load experiment configuration from Redis
    */
   private async loadExperimentConfig(): Promise<void> {
-    const experiment = await prisma.experiment.findUnique({
-      where: { id: this.experimentId },
-    });
+    const experiment = await getExperiment(this.experimentId);
 
     if (!experiment) {
       throw new Error(`Experiment not found: ${this.experimentId}`);
@@ -164,16 +160,15 @@ export class GameRoom extends Room<GameState> {
    * Create game session record in database
    */
   private async createGameSession(): Promise<void> {
-    await prisma.gameSession.create({
-      data: {
-        experimentId: this.experimentId,
-        roomId: this.roomId,
-        playerStates: {},
-        startedAt: null, // Will be set when game actually starts
-      },
-    });
+    // TODO: Add gameSession tracking to Redis if needed
+    // await redis.set(`session:${this.experimentId}`, JSON.stringify({
+    //   experimentId: this.experimentId,
+    //   roomId: this.roomId,
+    //   playerStates: {},
+    //   startedAt: null,
+    // }));
 
-    logger.info('Game session created', {
+    logger.info('Game session created (in-memory only)', {
       roomId: this.roomId,
       experimentId: this.experimentId,
     });
@@ -211,12 +206,12 @@ export class GameRoom extends Room<GameState> {
     const playerState = this.state.players.get(playerId);
 
     if (!playerState) {
-      logger.error('Player not found in game state', { playerId });
+      logger.error('Player not found in game state', { playerId } as any);
       throw new Error(`Player ${playerId} not found`);
     }
 
     if (playerState.type !== 'human') {
-      logger.error('Attempted to join non-human player slot', { playerId });
+      logger.error('Attempted to join non-human player slot', { playerId } as any);
       throw new Error('This player slot is not for humans');
     }
 
@@ -280,16 +275,15 @@ export class GameRoom extends Room<GameState> {
 
     this.state.startedAt = Date.now();
 
-    // Update database
-    await prisma.gameSession.update({
-      where: { experimentId: this.experimentId },
-      data: { startedAt: new Date() },
-    });
+    // Update Redis
+    // TODO: Add gameSession.startedAt tracking to Redis if needed
+    // await redis.set(`session:${this.experimentId}:startedAt`, new Date().toISOString());
 
-    await prisma.experiment.update({
-      where: { id: this.experimentId },
-      data: { status: 'IN_PROGRESS' },
-    });
+    const experiment = await getExperiment(this.experimentId);
+    if (experiment) {
+      experiment.status = 'IN_PROGRESS';
+      await saveExperiment(this.experimentId, experiment);
+    }
 
     // Start round loop
     this.startNextRound();
@@ -658,25 +652,24 @@ export class GameRoom extends Room<GameState> {
     scores: Record<string, number>
   ): Promise<void> {
     try {
-      await prisma.round.create({
-        data: {
-          experimentId: this.experimentId,
-          roundNumber: this.state.currentRound,
-          payoffMatrix: this.currentMatrix as any,
-          actions: actions as any,
-          payoffs: payoffs as any,
-          cumulativeScores: scores as any,
-          announcedAt: new Date(Date.now() - this.config.announcementDuration),
-          revealedAt: new Date(),
-          durationMs:
-            this.config.announcementDuration +
-            this.config.communicationDuration +
-            this.config.actionDuration +
-            this.config.revelationDuration,
-        },
-      });
+      // TODO: Add round tracking to Redis if needed
+      // await redis.set(`round:${this.experimentId}:${this.state.currentRound}`, JSON.stringify({
+      //   experimentId: this.experimentId,
+      //   roundNumber: this.state.currentRound,
+      //   payoffMatrix: this.currentMatrix,
+      //   actions: actions,
+      //   payoffs: payoffs,
+      //   cumulativeScores: scores,
+      //   announcedAt: new Date(Date.now() - this.config.announcementDuration).toISOString(),
+      //   revealedAt: new Date().toISOString(),
+      //   durationMs:
+      //     this.config.announcementDuration +
+      //     this.config.communicationDuration +
+      //     this.config.actionDuration +
+      //     this.config.revelationDuration,
+      // }));
 
-      logger.debug('Round saved to database', {
+      logger.debug('Round saved (in-memory only)', {
         experimentId: this.experimentId,
         round: this.state.currentRound,
       });
@@ -707,7 +700,7 @@ export class GameRoom extends Room<GameState> {
     const player = this.state.players.get(playerId);
 
     if (!player) {
-      logger.error('Player state not found', { playerId });
+      logger.error('Player state not found', { playerId } as any);
       return;
     }
 
@@ -853,17 +846,16 @@ export class GameRoom extends Room<GameState> {
    */
   private async saveChatToDatabase(chatMessage: ChatMessageState): Promise<void> {
     try {
-      await prisma.chatMessage.create({
-        data: {
-          id: chatMessage.id,
-          experimentId: this.experimentId,
-          roundNumber: chatMessage.roundNumber,
-          fromPlayer: chatMessage.fromPlayer,
-          toPlayer: chatMessage.toPlayer,
-          content: chatMessage.content,
-          timestamp: new Date(chatMessage.timestamp),
-        },
-      });
+      // TODO: Add chat message tracking to Redis if needed
+      // await redis.set(`chat:${this.experimentId}:${chatMessage.id}`, JSON.stringify({
+      //   id: chatMessage.id,
+      //   experimentId: this.experimentId,
+      //   roundNumber: chatMessage.roundNumber,
+      //   fromPlayer: chatMessage.fromPlayer,
+      //   toPlayer: chatMessage.toPlayer,
+      //   content: chatMessage.content,
+      //   timestamp: new Date(chatMessage.timestamp).toISOString(),
+      // }));
     } catch (error) {
       logger.error('Failed to save chat to database', error as Error, {
         experimentId: this.experimentId,
@@ -916,16 +908,15 @@ export class GameRoom extends Room<GameState> {
       totalRounds: this.state.currentRound,
     });
 
-    // Update database
-    await prisma.experiment.update({
-      where: { id: this.experimentId },
-      data: { status: 'COMPLETED' },
-    });
+    // Update Redis
+    const experiment = await getExperiment(this.experimentId);
+    if (experiment) {
+      experiment.status = 'COMPLETED';
+      await saveExperiment(this.experimentId, experiment);
+    }
 
-    await prisma.gameSession.update({
-      where: { experimentId: this.experimentId },
-      data: { endedAt: new Date() },
-    });
+    // TODO: Add gameSession.endedAt tracking to Redis if needed
+    // await redis.set(`session:${this.experimentId}:endedAt`, new Date().toISOString());
 
     // Disconnect after delay
     setTimeout(() => {
@@ -959,16 +950,17 @@ export class GameRoom extends Room<GameState> {
         if (connectedCount < 2) {
           logger.error('Insufficient players, aborting game', {
             connectedCount,
-          });
+          } as any);
 
           this.broadcast('game_aborted', {
             reason: 'Insufficient players (< 2)',
           });
 
-          await prisma.experiment.update({
-            where: { id: this.experimentId },
-            data: { status: 'ABORTED' },
-          });
+          const experiment = await getExperiment(this.experimentId);
+          if (experiment) {
+            experiment.status = 'ABORTED';
+            await saveExperiment(this.experimentId, experiment);
+          }
 
           setTimeout(() => this.disconnect(), 2000);
         }

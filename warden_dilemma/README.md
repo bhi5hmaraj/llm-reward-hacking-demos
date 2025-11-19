@@ -2,6 +2,8 @@
 
 A web-based platform for studying strategic behavior in N-player iterated prisoner's dilemma games with private communication.
 
+> **Note**: This app runs under the `/warden_dilemma` subpath to allow multiple experimental apps to coexist on the same server. See [SUBPATH_CONFIG.md](./SUBPATH_CONFIG.md) for details.
+
 ## Features
 
 - **N-player support** (2-10 players)
@@ -17,44 +19,82 @@ A web-based platform for studying strategic behavior in N-player iterated prison
 
 ### Prerequisites
 
-- Node.js 18+
-- PostgreSQL 15+
-- Redis 7+
-- pnpm (recommended) or npm
+- **Node.js 18+**
+- **pnpm** (recommended) or npm
+- **Upstash Redis** (optional - for data persistence)
+  - Sign up at [upstash.com](https://upstash.com) for a free account
+  - Works without Redis in in-memory mode for local development
 
 ### Installation
 
 ```bash
+# Clone repository
+cd warden_dilemma
+
 # Install dependencies
 pnpm install
 
-# Set up environment variables
-cd server
-cp ../.env.example .env
-# Edit .env with your database credentials
+# Set up environment variables (optional)
+cp .env.example server/.env
+# Edit server/.env with your Upstash Redis credentials if you want persistence
+```
 
-# Run database migrations
-pnpm db:migrate
-cd ..
+### Starting the Game
 
-# Start server (builds frontend and serves it)
+```bash
+# Start the development server
 pnpm dev
 ```
 
 This will:
-1. Build the frontend (React → static files)
-2. Start the server at `http://localhost:3000`
-3. Serve both frontend and API from single server
+1. Build the frontend (React → static files in `client/dist`)
+2. Start the Colyseus + Express server at `http://localhost:3000`
+3. Serve both frontend and API from a single server
 
-**Open**: `http://localhost:3000`
+**Open your browser**:
+- **App**: `http://localhost:3000/warden_dilemma`
+- **Root**: `http://localhost:3000` (lists all apps)
+
+### Alternative Development Modes
+
+```bash
+# Watch mode: Auto-rebuild client on file changes
+pnpm dev:watch
+
+# Separate servers: Frontend on :5173, Backend on :3000
+pnpm dev:separate
+```
+
+See [QUICKSTART.md](./QUICKSTART.md) for more details.
 
 ### Running an Experiment
 
-1. Navigate to `http://localhost:3000/create`
-2. Configure game parameters (players, rounds, payoff structure)
-3. Launch the experiment (generates a lobby code)
-4. Players join via lobby code at `http://localhost:3000`
-5. Monitor real-time from experimenter dashboard
+**As Experimenter:**
+1. Visit `http://localhost:3000/warden_dilemma`
+2. Click **"Create Experiment"**
+3. Configure:
+   - Experiment name and hypothesis
+   - Number of players (2-10)
+   - Number of rounds
+   - Payoff structure (choose from presets or custom)
+   - Phase durations
+4. Click **"Create & Get Lobby Code"**
+5. Share the **6-character lobby code** with players
+6. Once all players join, click **"Start Game"**
+7. Monitor the game in real-time from your dashboard
+
+**As Player:**
+1. Visit `http://localhost:3000/warden_dilemma`
+2. Click **"Join Experiment"**
+3. Enter the **lobby code** shared by the experimenter
+4. Enter your name and wait in the lobby
+5. Once game starts:
+   - **Announcement Phase**: Review the payoff matrix
+   - **Communication Phase**: Chat privately with other players via 1:1 DMs
+   - **Action Phase**: Choose your action (Cooperate/Defect/Opt-Out)
+   - **Revelation Phase**: See all actions and payoffs
+6. Repeat for all rounds
+7. View final results and rankings
 
 ## Project Structure
 
@@ -87,7 +127,7 @@ warden_dilemma/
 
 **Backend**: Node.js, Express, Colyseus, TypeScript, Prisma
 
-**Database**: PostgreSQL, Redis
+**Database**: Upstash Redis (serverless, optional), Colyseus in-memory state
 
 **AI Integration**: OpenAI API, Anthropic API
 
@@ -101,12 +141,21 @@ Players participate in an iterated prisoner's dilemma with:
 
 See [DESIGN.md](./DESIGN.md) for detailed game mechanics and architecture.
 
+## Deployment
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for instructions on:
+- Deploying to Google Cloud Run (recommended)
+- Deploying with Docker
+- Setting up continuous deployment from GitHub
+- Environment variables and production configuration
+
 ## Development Roadmap
 
 - [x] Phase 1: Core infrastructure and MVP
+- [x] Single-server architecture with Upstash Redis
 - [ ] Phase 2: Custom payoff generators and AI integration
 - [ ] Phase 3: Advanced analytics and visualizations
-- [ ] Phase 4: Scaling and production deployment
+- [ ] Phase 4: Production deployment and scaling
 
 ## Contributing
 

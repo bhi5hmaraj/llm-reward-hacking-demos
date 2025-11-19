@@ -5,6 +5,7 @@ import path from 'path'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  base: '/warden_dilemma',  // Serve app under /warden_dilemma subpath
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -14,7 +15,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // Proxy API requests to backend
-      '/api': {
+      '/warden_dilemma/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,
       },
