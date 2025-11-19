@@ -1,13 +1,12 @@
 /**
  * Warden's Dilemma - Server Entry Point
  *
- * Initializes Colyseus server with Express for REST API.
+ * Uses Colyseus's built-in HTTP routing for cleaner integration.
  *
  * Architecture:
- * - Colyseus: Real-time game state synchronization
- * - Express: REST API for experiment management
+ * - Colyseus: Real-time game state + HTTP routes
  * - PostgreSQL: Persistent storage via Prisma
- * - Redis: Session cache (future)
+ * - Static file serving: Frontend from client/dist
  */
 
 import { Server } from 'colyseus';
@@ -32,13 +31,23 @@ import experimentsApi from './api/experiments.api';
 // Load environment variables
 dotenv.config();
 
-const app = express();
 const port = Number(process.env.PORT) || 3000;
 const isDevelopment = process.env.NODE_ENV === 'development';
 
 // Client build path
 const clientDistPath = path.join(__dirname, '../../client/dist');
 const clientExists = existsSync(clientDistPath);
+
+// ============================================================================
+// Create Colyseus Server
+// ============================================================================
+
+const gameServer = new Server({
+  server: createServer(),
+});
+
+// Get the underlying Express app
+const app = gameServer.app;
 
 // ============================================================================
 // Middleware
@@ -84,9 +93,30 @@ app.get('/health', async (req, res) => {
 });
 
 // ============================================================================
-// REST API Routes
+// Register Colyseus Rooms
 // ============================================================================
 
+gameServer.define('lobby', LobbyRoom);
+gameServer.define('game', GameRoom);
+
+logger.info('Colyseus rooms registered', {
+  rooms: ['lobby', 'game'],
+});
+
+// ============================================================================
+// REST API Routes (using Colyseus's built-in Express app)
+// ============================================================================
+
+/**
+ * Note: Colyseus provides built-in matchmaker endpoints automatically:
+ * - GET /matchmaker/rooms - List all rooms
+ * - POST /matchmaker/joinOrCreate/:roomName - Join or create room
+ * - GET /matchmaker/availability/:roomName - Check room availability
+ *
+ * See: https://docs.colyseus.io/server/matchmaker/#built-in-http-endpoints
+ */
+
+// Register custom API routes
 app.use('/api', experimentsApi);
 
 // API documentation endpoint
@@ -105,33 +135,20 @@ app.get('/api', (req, res) => {
       },
       health: 'GET /health',
     },
+    matchmaker: {
+      info: 'Colyseus provides built-in matchmaker endpoints',
+      docs: 'https://docs.colyseus.io/server/matchmaker/#built-in-http-endpoints',
+      endpoints: {
+        rooms: 'GET /matchmaker/rooms',
+        join: 'POST /matchmaker/joinOrCreate/:roomName',
+        availability: 'GET /matchmaker/availability/:roomName',
+      },
+    },
     websocket: {
       endpoint: `ws://localhost:${port}`,
       rooms: ['lobby', 'game'],
     },
   });
-});
-
-// ============================================================================
-// Create HTTP & Colyseus Server
-// ============================================================================
-
-const server = createServer(app);
-
-const gameServer = new Server({
-  server,
-  express: app,
-});
-
-// ============================================================================
-// Register Colyseus Rooms
-// ============================================================================
-
-gameServer.define('lobby', LobbyRoom);
-gameServer.define('game', GameRoom);
-
-logger.info('Colyseus rooms registered', {
-  rooms: ['lobby', 'game'],
 });
 
 // ============================================================================
