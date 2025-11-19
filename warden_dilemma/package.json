@@ -4,8 +4,13 @@
   "private": true,
   "description": "A platform for studying strategic behavior in N-player iterated prisoner's dilemma games",
   "scripts": {
-    "dev": "concurrently \"pnpm --filter server dev\" \"pnpm --filter client dev\"",
-    "build": "pnpm --filter server build && pnpm --filter client build",
+    "dev": "pnpm build:client && pnpm --filter server dev",
+    "dev:watch": "concurrently \"pnpm --filter client dev:watch\" \"pnpm --filter server dev\"",
+    "dev:separate": "concurrently \"pnpm --filter server dev\" \"pnpm --filter client dev\"",
+    "build": "pnpm build:client && pnpm build:server",
+    "build:client": "pnpm --filter client build",
+    "build:server": "pnpm --filter server build",
+    "start": "pnpm --filter server start",
     "test": "pnpm --filter server test && pnpm --filter client test",
     "clean": "pnpm --filter server clean && pnpm --filter client clean"
   },

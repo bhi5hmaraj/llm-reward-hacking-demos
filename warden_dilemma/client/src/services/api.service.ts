@@ -6,7 +6,18 @@
 
 import { CreateExperimentRequest, CreateExperimentResponse, ExperimentConfig } from '../types';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+// Auto-detect API URL
+// If VITE_API_URL is set, use it (separate dev server)
+// Otherwise, use same-origin API (production/built)
+const getAPIURL = () => {
+  const envURL = import.meta.env.VITE_API_URL;
+  if (envURL) return envURL;
+
+  // Same-origin API
+  return `${window.location.origin}/api`;
+};
+
+const API_URL = getAPIURL();
 
 class APIService {
   /**

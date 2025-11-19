@@ -15,6 +15,8 @@ import { createServer } from 'http';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import { existsSync } from 'fs';
 
 // Services
 import { initializeDatabase, disconnectDatabase, checkDatabaseHealth } from './services/database.service';
@@ -34,14 +36,22 @@ const app = express();
 const port = Number(process.env.PORT) || 3000;
 const isDevelopment = process.env.NODE_ENV === 'development';
 
+// Client build path
+const clientDistPath = path.join(__dirname, '../../client/dist');
+const clientExists = existsSync(clientDistPath);
+
 // ============================================================================
 // Middleware
 // ============================================================================
 
-app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
-  credentials: true,
-}));
+// CORS only needed in development when using separate Vite server
+if (isDevelopment && !clientExists) {
+  app.use(cors({
+    origin: 'http://localhost:5173',
+    credentials: true,
+  }));
+  logger.info('CORS enabled for development (separate Vite server)');
+}
 
 app.use(express.json());
 
@@ -139,6 +149,31 @@ if (process.env.MONITOR_ENABLED === 'true') {
 }
 
 // ============================================================================
+// Serve Frontend (Production or Built Client)
+// ============================================================================
+
+if (clientExists) {
+  // Serve static files from client/dist
+  app.use(express.static(clientDistPath));
+
+  // SPA fallback: Return index.html for all non-API routes
+  app.get('*', (req, res) => {
+    // Skip API routes, health check, and colyseus monitor
+    if (req.path.startsWith('/api') || req.path === '/health' || req.path.startsWith('/colyseus')) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  });
+
+  logger.info('Serving frontend from client/dist');
+} else if (isDevelopment) {
+  logger.warn('Client not built. Run "pnpm build:client" or use separate Vite dev server on http://localhost:5173');
+} else {
+  logger.error('Client build not found. Run "pnpm build:client" before starting production server.');
+}
+
+// ============================================================================
 // Start Server
 // ============================================================================
 
@@ -153,7 +188,7 @@ async function startServer() {
     logger.info('🎮 Warden\'s Dilemma Server started', {
       port,
       environment: process.env.NODE_ENV || 'development',
-      clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
+      servingFrontend: clientExists,
       websocket: `ws://localhost:${port}`,
       database: 'connected',
     });
@@ -162,10 +197,17 @@ async function startServer() {
     console.log('  🎮  Warden\'s Dilemma Server');
     console.log('='.repeat(60));
     console.log(`  Environment:  ${process.env.NODE_ENV || 'development'}`);
-    console.log(`  HTTP Server:  http://localhost:${port}`);
+    console.log(`  Server:       http://localhost:${port}`);
     console.log(`  WebSocket:    ws://localhost:${port}`);
-    console.log(`  Client URL:   ${process.env.CLIENT_URL || 'http://localhost:5173'}`);
-    console.log(`  API Docs:     http://localhost:${port}/api`);
+
+    if (clientExists) {
+      console.log(`  Frontend:     http://localhost:${port}`);
+      console.log(`  API:          http://localhost:${port}/api`);
+    } else if (isDevelopment) {
+      console.log(`  Frontend:     http://localhost:5173 (Vite dev server)`);
+      console.log(`  API:          http://localhost:${port}/api`);
+    }
+
     if (process.env.MONITOR_ENABLED === 'true') {
       console.log(`  Monitor:      http://localhost:${port}/colyseus`);
     }
