@@ -13,7 +13,7 @@ import ResultsPage from './pages/ResultsPage';
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/warden_dilemma">
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         {/* Header */}
         <header style={{
