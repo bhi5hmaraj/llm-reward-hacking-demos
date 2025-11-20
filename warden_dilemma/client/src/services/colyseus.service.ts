@@ -29,10 +29,50 @@ class ColyseusService {
   private client: Client;
   private lobbyRoom?: Room;
   private gameRoom?: Room;
+  private myPlayerId?: string;
+  private joinTokenByExperiment: Map<string, string> = new Map();
+  private roleByExperiment: Map<string, 'experimenter' | 'player'> = new Map();
 
   constructor() {
     this.client = new Client(COLYSEUS_URL);
     console.log('[Colyseus] Client initialized', { url: COLYSEUS_URL });
+  }
+
+  setPlayerId(playerId: string, experimentId?: string) {
+    this.myPlayerId = playerId;
+    if (experimentId) {
+      try { sessionStorage.setItem(`playerId:${experimentId}`, playerId); } catch {}
+    }
+  }
+
+  getPlayerId(experimentId?: string): string | undefined {
+    if (this.myPlayerId) return this.myPlayerId;
+    if (experimentId) {
+      try { return sessionStorage.getItem(`playerId:${experimentId}`) || undefined; } catch { return undefined; }
+    }
+    return undefined;
+  }
+
+  setJoinToken(experimentId: string, token: string) {
+    this.joinTokenByExperiment.set(experimentId, token);
+    try { sessionStorage.setItem(`joinToken:${experimentId}`, token); } catch {}
+  }
+
+  getJoinToken(experimentId: string): string | undefined {
+    const mem = this.joinTokenByExperiment.get(experimentId);
+    if (mem) return mem;
+    try { return sessionStorage.getItem(`joinToken:${experimentId}`) || undefined; } catch { return undefined; }
+  }
+
+  setRole(experimentId: string, role: 'experimenter' | 'player') {
+    this.roleByExperiment.set(experimentId, role);
+    try { sessionStorage.setItem(`role:${experimentId}`, role); } catch {}
+  }
+
+  getRole(experimentId: string): 'experimenter' | 'player' | undefined {
+    const mem = this.roleByExperiment.get(experimentId);
+    if (mem) return mem;
+    try { return (sessionStorage.getItem(`role:${experimentId}`) as any) || undefined; } catch { return undefined; }
   }
 
   /**
@@ -72,9 +112,16 @@ class ColyseusService {
     try {
       console.log('[Colyseus] Joining game', { gameRoomId, role, playerId });
 
+      // Look up experimentId from URL params; fetch stored join token
+      const url = new URL(window.location.href);
+      const experimentId = url.searchParams.get('experimentId') || undefined;
+      const joinToken = experimentId ? this.getJoinToken(experimentId) : undefined;
+
       this.gameRoom = await this.client.joinById(gameRoomId, {
+        // role and playerId are ignored by server (token-based auth); still sent for compatibility
         role,
         playerId,
+        joinToken,
       });
 
       console.log('[Colyseus] Joined game', { roomId: this.gameRoom.id });
