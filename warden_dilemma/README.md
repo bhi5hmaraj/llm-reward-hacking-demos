@@ -522,17 +522,177 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for instructions on:
 - Setting up continuous deployment from GitHub
 - Environment variables and production configuration
 
-## Development Roadmap
+## Why "Warden's Dilemma"?
 
-- [x] Phase 1: Core infrastructure and MVP
-- [x] Single-server architecture with Upstash Redis
-- [ ] Phase 2: Custom payoff generators and AI integration
-- [ ] Phase 3: Advanced analytics and visualizations
-- [ ] Phase 4: Production deployment and scaling
+The name draws from the classic **prisoner's dilemma thought experiment**, but reimagined through the lens of a warden observing prisoners' behavior:
+
+1. **The Warden (Experimenter)**: Controls the environment, sets the incentive structure (payoff matrix), and observes how subjects respond. Like a warden designing the prison system, experimenters design the game to study decision-making.
+
+2. **The Dilemma**: Each prisoner (player) faces a conflict between individual advantage (defection) and collective benefit (cooperation). The warden watches to understand which forces win out.
+
+3. **The Twist**: With LLM agents, we're asking: "How does an AI prisoner behave when facing the same dilemma?" This is crucial for AI safety research—do agents defect when incentivized to? Do they coordinate with other agents to exploit the system?
+
+The name captures the platform's dual purpose:
+- As a **game**: studying human behavior in strategic scenarios
+- As a **research tool**: understanding LLM agent behavior under pressure
+
+---
+
+## Future Plans
+
+### Short Term (Next 2-3 months)
+
+1. **Experimenter Dashboard (Phase 2)**
+   - Real-time game monitoring with live statistics
+   - Round history visualization with trend analysis
+   - Chat monitoring with keyword search and export
+   - Dynamic payoff matrix editor between rounds
+   - See [experimenter-dashboard-design.md](./docs/experimenter-dashboard-design.md) for full specification
+
+2. **Enhanced Player Chat**
+   - DM-style conversation interface (like Slack/Discord)
+   - Persistent chat history across rounds
+   - Unread message indicators
+   - Better UX for strategic communication
+
+3. **AI Agent Framework**
+   - LLM agent integration with OpenAI/Anthropic APIs
+   - Deterministic action selection (no randomness in responses)
+   - Agent-to-agent and agent-to-human conversations
+   - Strategy logging and behavior analysis
+
+### Medium Term (3-6 months)
+
+1. **Advanced Analytics**
+   - Cooperation rate trends per player and across cohorts
+   - Coalition formation detection (who played together?)
+   - Deception metrics (promises vs. actions)
+   - Network analysis of communication patterns
+   - Comparison with game-theoretic equilibrium predictions
+
+2. **Experiment Templates**
+   - Pre-built experimental designs (e.g., "Repeated Prisoners' Dilemma with Communication")
+   - A/B testing frameworks for comparing payoff structures
+   - Multi-experiment pipelines for studying behavioral shifts
+
+3. **Scaling & Deployment**
+   - Multi-region deployment support
+   - Load balancing for 100+ simultaneous games
+   - Persistent data storage with query APIs
+   - Web-based experiment builder (no code required)
+
+### Long Term (6-12 months)
+
+1. **Safety Research Features**
+   - "Specification Gaming" detection: identify when agents exploit loopholes
+   - "Treacherous Turn" detection: track when agents shift from cooperation to defection
+   - Adversarial payoff matrices to stress-test agent alignment
+   - Formal verification of agent commitments
+
+2. **Agent Ecosystem**
+   - Fine-tuned models specifically trained for strategic scenarios
+   - Agent reputation system (published behavior profiles)
+   - Agent-vs-Agent tournaments for benchmarking strategies
+   - Plugin system for custom agent frameworks
+
+3. **Theory Integration**
+   - Automated mechanism design to find payoff structures that induce specific behaviors
+   - Integration with causal inference tools for counterfactual analysis
+   - Formal game theory solver to compute equilibria and compare to observed behavior
+
+---
+
+## FAQ
+
+### Q: Why is this useful for AI safety?
+
+**A**: The most dangerous AI behaviors emerge in strategic contexts where the AI has incentives misaligned with humans. By studying LLM agents in iterated games with communication, we can:
+- Identify when agents defect against human players
+- Spot emergent deception (saying one thing, doing another)
+- Understand how agents coordinate with other agents to exploit humans
+- Develop detection methods for specification gaming and reward hacking
+
+This is critical for understanding AI alignment risks before deployment.
+
+### Q: Can I run this locally without the internet?
+
+**A**: Yes! For local development:
+- The game runs entirely on localhost without Redis
+- No cloud dependencies required
+- Just run `pnpm dev` and open `http://localhost:3000/warden_dilemma`
+- AI agents require API keys (OpenAI, Anthropic), but human-only experiments work offline
+
+For production, Redis is optional (adds data persistence but isn't required).
+
+### Q: How many players can play simultaneously?
+
+**A**: Currently tested with 2-4 players per game. The architecture supports up to 10 players per game. With Colyseus, you can run multiple concurrent games on the same server. Planned scaling improvements target 100+ concurrent games.
+
+### Q: Can I integrate my own AI agent?
+
+**A**: Not yet—that's on the v0.2 roadmap. For now, you can:
+- Run with human-only players
+- Use preset AI strategies
+- Contribute agent implementations (see Contributing)
+
+The AI integration framework is under development in [FRAMEWORK_SCOPE.md](./docs/FRAMEWORK_SCOPE.md).
+
+### Q: How do I export data for analysis?
+
+**A**: Current options:
+- Game server logs (JSON format) with all actions, payoffs, and chat
+- Browser DevTools to inspect Colyseus state (for debugging)
+- Planned: CSV export, web dashboard for basic analytics
+
+Full analytics dashboard is planned for Phase 2.
+
+### Q: What happens if a player disconnects?
+
+**A**: The game pauses. The server waits for reconnection or will auto-submit as Opt-Out after a timeout. This is configurable per experiment.
+
+### Q: Can I customize the payoff matrix?
+
+**A**: Yes! You can:
+- Select from preset matrices (symmetric, asymmetric, cooperative, competitive)
+- Manually edit matrices before the game starts
+- Dynamically change matrices between rounds (planned for Dashboard Phase 2)
+
+See example in [Core Mechanics](#core-mechanics) section.
+
+### Q: Is this peer-reviewed / published?
+
+**A**: This is an active research project. Publications are in progress. If you use this platform for research, please cite as:
+
+```bibtex
+@software{wardens_dilemma_2025,
+  title={Warden's Dilemma: A Platform for Strategic Behavior Research},
+  author={},
+  year={2025},
+  url={https://github.com/[repo]}
+}
+```
+
+### Q: How does communication work with asymmetric information?
+
+**A**: Players can only send 1:1 private messages. The experimenter sees all messages. Other players cannot eavesdrop. This creates:
+- **Opportunity for deception**: Players might promise cooperation to one player and defection to another
+- **Coalition detection**: Researchers can analyze message patterns to find alliances
+- **Strategic complexity**: Players must manage multiple relationships and consistency
+
+This is fundamentally different from the original prisoner's dilemma (which had no communication).
+
+---
 
 ## Contributing
 
-This is a research project. For questions or collaboration inquiries, please open an issue.
+This is a research project. We welcome contributions in the form of:
+- Bug reports and feature requests (GitHub Issues)
+- AI agent implementations
+- Analytics visualizations
+- Documentation improvements
+- Experimental designs and protocols
+
+For major contributions, please open an issue to discuss first.
 
 ## License
 
