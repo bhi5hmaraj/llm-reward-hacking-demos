@@ -4,9 +4,9 @@
   "private": true,
   "description": "A platform for studying strategic behavior in N-player iterated prisoner's dilemma games",
   "scripts": {
-    "dev": "pnpm build:client && pnpm --filter warden-dilemma-server dev",
+    "dev": "pnpm dev:watch",
     "dev:watch": "concurrently \"pnpm --filter warden-dilemma-client dev:watch\" \"pnpm --filter warden-dilemma-server dev\"",
-    "dev:separate": "concurrently \"pnpm --filter warden-dilemma-server dev\" \"pnpm --filter warden-dilemma-client dev\"",
+    "dev:separate": "concurrently \"pnpm --filter warden-dilemma-server dev\" \"VITE_COLYSEUS_URL=ws://localhost:3000 VITE_API_URL=http://localhost:3000/warden_dilemma/api pnpm --filter warden-dilemma-client dev\"",
     "build": "pnpm build:client && pnpm build:server",
     "build:client": "pnpm --filter warden-dilemma-client build",
     "build:server": "pnpm --filter warden-dilemma-server build",
@@ -25,5 +25,6 @@
   "engines": {
     "node": ">=18.0.0",
     "pnpm": ">=8.0.0"
-  }
+  },
+  "packageManager": "pnpm@10.22.0+sha512.bf049efe995b28f527fd2b41ae0474ce29186f7edcb3bf545087bd61fbbebb2bf75362d1307fda09c2d288e1e499787ac12d4fcb617a974718a6051f2eee741c"
 }
