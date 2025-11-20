@@ -34,7 +34,7 @@ import { v4 as uuid } from 'uuid';
 
 interface GameRoomOptions {
   experimentId: string;
-  playerAssignments: Record<string, number>; // sessionId -> slot
+  tokens?: Record<string, { role: 'experimenter' | 'player'; playerId?: string }>;
 }
 
 interface JoinOptions {
@@ -46,6 +46,7 @@ export class GameRoom extends Room<GameState> {
   private experimentId!: string;
   private config!: ExperimentConfig;
   private payoffEngine!: PayoffEngine;
+  private allowedTokens: Map<string, { role: 'experimenter' | 'player'; playerId?: string }> = new Map();
 
   // Session tracking
   private experimenterSessionId?: string;
@@ -75,6 +76,12 @@ export class GameRoom extends Room<GameState> {
 
     // Initialize payoff engine
     this.payoffEngine = new PayoffEngine(this.config);
+    // ingest allowed tokens for auth
+    if (options.tokens) {
+      for (const [token, meta] of Object.entries(options.tokens)) {
+        this.allowedTokens.set(token, meta);
+      }
+    }
 
     // Initialize game state
     const experiment = await getExperiment(this.experimentId);
@@ -177,25 +184,29 @@ export class GameRoom extends Room<GameState> {
   /**
    * Client joins game
    */
-  async onJoin(client: Client, options: JoinOptions) {
+  async onJoin(client: Client, options: any) {
     logger.info('Client joining game', {
       roomId: this.roomId,
       sessionId: client.sessionId,
       role: options.role,
       playerId: options.playerId,
+      hasJoinToken: !!options.joinToken,
     });
-
-    if (options.role === 'experimenter') {
+    // Enforce token-based auth; ignore client-supplied role
+    const token = options.joinToken as string | undefined;
+    if (!token || !this.allowedTokens.has(token)) {
+      logger.warn('Join rejected: invalid or missing token', { sessionId: client.sessionId });
+      client.error(4002, 'invalid_token');
+      client.leave(1000);
+      return;
+    }
+    const meta = this.allowedTokens.get(token)!;
+    if (meta.role === 'experimenter') {
       this.experimenterSessionId = client.sessionId;
       logger.info('Experimenter joined', { sessionId: client.sessionId });
-
-      // Send current game state
-      client.send('game_state', {
-        phase: this.state.phase,
-        currentRound: this.state.currentRound,
-      });
-    } else if (options.role === 'player' && options.playerId) {
-      await this.handlePlayerJoin(client, options.playerId);
+      client.send('game_state', { phase: this.state.phase, currentRound: this.state.currentRound });
+    } else if (meta.role === 'player' && meta.playerId) {
+      await this.handlePlayerJoin(client, meta.playerId);
     }
   }
 
