@@ -10,11 +10,26 @@ import { useState } from 'react';
 export default function HomePage() {
   const navigate = useNavigate();
   const [lobbyCode, setLobbyCode] = useState('');
+  const [joinError, setJoinError] = useState<string | null>(null);
 
-  const handleJoinAsPlayer = () => {
-    if (lobbyCode.trim()) {
-      // In a real app, we'd resolve lobby code to experiment ID
-      navigate(`/lobby/${lobbyCode}`);
+  const handleJoinAsPlayer = async () => {
+    const code = lobbyCode.trim().toUpperCase();
+    if (!code) return;
+    setJoinError(null);
+
+    try {
+      const res = await fetch(`/warden_dilemma/api/experiments/resolve/${code}`);
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({ error: 'Failed to resolve code' }));
+        throw new Error(error || 'Failed to resolve code');
+      }
+      const data = await res.json();
+      try { sessionStorage.setItem(`role:${data.experimentId}`, 'player'); } catch {}
+      navigate(`/lobby/${data.experimentId}?code=${code}`);
+    } catch (err) {
+      const msg = (err as Error).message || 'Unable to join lobby';
+      setJoinError(msg);
+      console.error('[Home] join failed', { code, msg });
     }
   };
 
@@ -30,7 +45,7 @@ export default function HomePage() {
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '3rem' }}>
+      <div className="grid grid-2" style={{ gap: '2rem', marginBottom: '3rem' }}>
         {/* Experimenter Card */}
         <div className="card">
           <h2 style={{ marginBottom: '1rem' }}>🔬 Experimenter</h2>
@@ -52,22 +67,28 @@ export default function HomePage() {
           <p style={{ marginBottom: '1.5rem', color: '#666' }}>
             Join an existing experiment using a lobby code provided by the experimenter.
           </p>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div className="grid grid-2" style={{ gap: '0.5rem' }}>
             <input
               type="text"
               placeholder="Enter lobby code"
               value={lobbyCode}
               onChange={(e) => setLobbyCode(e.target.value.toUpperCase())}
-              style={{ flex: 1 }}
+              style={{ width: '100%' }}
               maxLength={6}
             />
             <button
               className="secondary"
               onClick={handleJoinAsPlayer}
               disabled={!lobbyCode.trim()}
+              style={{ width: '100%' }}
             >
               Join
             </button>
+            {joinError && (
+              <div style={{ color: '#c62828', marginTop: '0.5rem', fontSize: '0.875rem' }}>
+                {joinError}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -75,7 +96,7 @@ export default function HomePage() {
       {/* Features */}
       <div className="card">
         <h2 style={{ marginBottom: '1.5rem' }}>✨ Features</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+        <div className="grid grid-2" style={{ gap: '1.5rem' }}>
           <div>
             <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>🔀 Symmetric Payoffs</h3>
             <p style={{ fontSize: '0.875rem', color: '#666' }}>
