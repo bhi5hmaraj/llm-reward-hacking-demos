@@ -123,7 +123,7 @@ export class GameState extends Schema {
   @type('number') phaseEndsAt: number = 0; // Unix timestamp (ms)
 
   // Current round data
-  @type('string') currentPayoffMatrix: string = '{}'; // JSON string
+  @type('string') currentPayoffMatrix: string = ''; // JSON string
 
   // Player states
   @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
