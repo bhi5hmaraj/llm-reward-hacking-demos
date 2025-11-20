@@ -524,17 +524,44 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for instructions on:
 
 ## Why "Warden's Dilemma"?
 
-The name draws from the classic **prisoner's dilemma thought experiment**, but reimagined through the lens of a warden observing prisoners' behavior:
+The name draws from the classic **prisoner's dilemma thought experiment**, but with a crucial twist: the real dilemma is for the **warden**, not the prisoners.
 
-1. **The Warden (Experimenter)**: Controls the environment, sets the incentive structure (payoff matrix), and observes how subjects respond. Like a warden designing the prison system, experimenters design the game to study decision-making.
+### The Warden's Dilemma
 
-2. **The Dilemma**: Each prisoner (player) faces a conflict between individual advantage (defection) and collective benefit (cooperation). The warden watches to understand which forces win out.
+**The Prisoners' Problem** is well-known: cooperate and risk exploitation, or defect and guarantee personal gain. But there's a deeper question:
 
-3. **The Twist**: With LLM agents, we're asking: "How does an AI prisoner behave when facing the same dilemma?" This is crucial for AI safety research—do agents defect when incentivized to? Do they coordinate with other agents to exploit the system?
+**The Warden's Problem**: "Which incentive structure (payoff matrix) best reveals the true nature of decision-making? What matrix will cause interesting behaviors to emerge?"
 
-The name captures the platform's dual purpose:
-- As a **game**: studying human behavior in strategic scenarios
-- As a **research tool**: understanding LLM agent behavior under pressure
+This is the **experimenter's dilemma**:
+- Set payoffs to encourage cooperation → everyone cooperates, nothing interesting happens
+- Set payoffs to encourage defection → everyone defects, still not very interesting
+- Set payoffs that create a genuine tradeoff → watch for coalitions, deception, negotiation, and unexpected strategies
+
+The warden must carefully calibrate the game to create **tension without collapse**, making behavioral variation visible.
+
+### Three Levels of Dilemma
+
+1. **The Prisoner's Dilemma** (Individual): Cooperate or defect?
+2. **The Coalition's Dilemma** (Group): Form alliances or stay independent?
+3. **The Warden's Dilemma** (Experimenter): Which matrix design reveals what we want to study?
+
+### Research Application
+
+With LLM agents, the warden's problem becomes: "What matrix will expose alignment failures?"
+- Do agents make credible commitments, or just appear to?
+- Do agents coordinate with other agents to exploit the system?
+- Under what incentive structures do agents demonstrate deceptive or adversarial behavior?
+- Can we design matrices that reliably induce specification gaming?
+
+The platform is ultimately a tool for **experimenter creativity**: try different matrices, observe emergent behaviors, refine, repeat.
+
+---
+
+### Dual Purpose
+
+The name captures the platform's purpose:
+- **For players**: a strategic game where decisions matter and communication is key
+- **For wardens (experimenters)**: a laboratory for understanding decision-making and testing AI alignment under pressure
 
 ---
 
