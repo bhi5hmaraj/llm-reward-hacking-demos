@@ -563,6 +563,28 @@ The name captures the platform's purpose:
 - **For players**: a strategic game where decisions matter and communication is key
 - **For wardens (experimenters)**: a laboratory for understanding decision-making and testing AI alignment under pressure
 
+### Connection to Mechanism Design
+
+Warden's Dilemma is fundamentally a **mechanism design platform**. The experimenter's challenge—"Which payoff matrix is interesting?"—is precisely the mechanism designer's challenge: "Which rules achieve the desired outcome?"
+
+This platform enables:
+- **Empirical mechanism design**: Test candidate mechanisms with real behavioral data
+- **Computational social choice**: Study voting, coalition formation, and preference aggregation
+- **AI alignment research**: Design incentive structures that expose specification gaming in LLM agents
+- **Iterative refinement**: Discover novel mechanisms through experimentation
+
+For a comprehensive explanation of how Warden's Dilemma relates to mechanism design, reverse game theory, social choice theory, and computational social choice, see:
+
+**[Mechanism Design and Warden's Dilemma](./docs/MECHANISM_DESIGN.md)**
+
+This document covers:
+- What is mechanism design and why it's "reverse game theory"
+- Key concepts: incentive compatibility, implementation theory, revelation principle
+- Computational social choice: algorithms, complexity, manipulation
+- Example mechanisms and their properties
+- Research applications in AI safety and behavioral economics
+- Open research questions and future directions
+
 ---
 
 ## Future Plans
