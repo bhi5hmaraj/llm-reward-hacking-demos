@@ -11,7 +11,8 @@
  * 4. LobbyRoom creates GameRoom and transfers players
  */
 
-import { Room, Client } from 'colyseus';
+import { Room, Client, matchMaker } from 'colyseus';
+import { randomUUID } from 'crypto';
 import { LobbyState, WaitingPlayer } from './schemas/LobbyState';
 import { logger } from '../services/logger.service';
 import { getExperiment, saveExperiment } from '../services/redis.service';
@@ -32,6 +33,8 @@ export class LobbyRoom extends Room<LobbyState> {
   private config!: ExperimentConfig;
   private experimenterSessionId?: string;
   private playerSlotAssignments: Map<string, number> = new Map(); // sessionId -> slot
+  private experimenterToken?: string;
+  private playerTokens: Map<string, { token: string; playerId: string }> = new Map();
 
   /**
    * Room creation
@@ -43,6 +46,12 @@ export class LobbyRoom extends Room<LobbyState> {
       roomId: this.roomId,
       experimentId: this.experimentId,
     });
+
+    // Expose experimentId for match-maker filtering visibility
+    try {
+      // @ts-ignore attach field so Redis driver can store it at top-level
+      (this as any).experimentId = this.experimentId;
+    } catch {}
 
     // Load experiment config from database
     await this.loadExperimentConfig();
@@ -73,6 +82,7 @@ export class LobbyRoom extends Room<LobbyState> {
       roomId: this.roomId,
       requiredPlayers: this.state.requiredPlayers,
       maxClients: this.maxClients,
+      experimentId: this.experimentId,
     });
   }
 
@@ -105,15 +115,25 @@ export class LobbyRoom extends Room<LobbyState> {
       roomId: this.roomId,
       sessionId: client.sessionId,
       role: options.role,
+      experimentId: this.experimentId,
     });
 
+    // Set experimenter flag BEFORE processing join (ensures state is ready for client)
     if (options.role === 'experimenter') {
+      this.state.experimenterConnected = true;
       this.handleExperimenterJoin(client);
     } else if (options.role === 'player') {
       await this.handlePlayerJoin(client, options);
     }
 
     this.checkIfReady();
+
+    logger.info('LobbyRoom join complete', {
+      roomId: this.roomId,
+      waitingCount: this.state.waitingPlayers.length,
+      clients: this.clients.length,
+      experimenterConnected: this.state.experimenterConnected,
+    });
   }
 
   /**
@@ -121,9 +141,14 @@ export class LobbyRoom extends Room<LobbyState> {
    */
   private handleExperimenterJoin(client: Client): void {
     this.experimenterSessionId = client.sessionId;
+    this.state.experimenterConnected = true;
+    // issue a join token for experimenter and send to client
+    this.experimenterToken = randomUUID();
+    client.send('experimenter_token', { token: this.experimenterToken, experimentId: this.experimentId });
     logger.info('Experimenter joined lobby', {
       roomId: this.roomId,
       sessionId: client.sessionId,
+      experimenterConnectedNow: this.state.experimenterConnected,
     });
   }
 
@@ -160,12 +185,18 @@ export class LobbyRoom extends Room<LobbyState> {
       playerName,
       slot,
       waitingCount: this.state.waitingPlayers.length,
+      clients: this.clients.length,
     });
 
-    // Send player their assigned ID
+    // Issue a join token for this player and send assignment
+    const token = randomUUID();
+    const playerId = `player_${slot}`;
+    this.playerTokens.set(client.sessionId, { token, playerId });
     client.send('player_assigned', {
-      playerId: `player_${slot}`,
+      playerId,
       slot,
+      token,
+      experimentId: this.experimentId,
     });
   }
 
@@ -235,10 +266,19 @@ export class LobbyRoom extends Room<LobbyState> {
     });
 
     try {
-      // Create GameRoom using matchmaker
-      const gameRoom = await (this.presence as any).create('game', {
+      // Build token map for GameRoom auth
+      const tokens: Record<string, { role: 'experimenter' | 'player'; playerId?: string }> = {};
+      if (this.experimenterToken) {
+        tokens[this.experimenterToken] = { role: 'experimenter' };
+      }
+      for (const [, entry] of this.playerTokens) {
+        tokens[entry.token] = { role: 'player', playerId: entry.playerId };
+      }
+
+      // Create GameRoom using Colyseus match-maker API
+      const gameRoom = await matchMaker.createRoom('game', {
         experimentId: this.experimentId,
-        playerAssignments: Object.fromEntries(this.playerSlotAssignments),
+        tokens,
       });
 
       logger.info('GameRoom created', {
@@ -315,6 +355,7 @@ export class LobbyRoom extends Room<LobbyState> {
 
     // If experimenter leaves, end lobby
     if (client.sessionId === this.experimenterSessionId) {
+      this.state.experimenterConnected = false;
       logger.info('Experimenter left, closing lobby', {
         roomId: this.roomId,
       });
