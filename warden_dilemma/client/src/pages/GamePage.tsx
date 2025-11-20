@@ -15,7 +15,8 @@ export default function GamePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const role = searchParams.get('role') || 'player';
+  const experimentIdParam = searchParams.get('experimentId') || undefined;
+  const role = experimentIdParam ? (sessionStorage.getItem(`role:${experimentIdParam}`) as any) || 'player' : 'player';
   const [connected, setConnected] = useState(false);
 
   // Game state
@@ -36,6 +37,7 @@ export default function GamePage() {
 
   // Chat
   const [chatTarget, setChatTarget] = useState<string>('');
+  const [selectedChat, setSelectedChat] = useState<string>('');
   const [chatInput, setChatInput] = useState('');
 
   useEffect(() => {
@@ -60,12 +62,30 @@ export default function GamePage() {
 
   const joinGame = async () => {
     try {
+      const rememberedId = colyseusService.getPlayerId() || ((): string | undefined => {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const expIdFromLobby = params.get('experimentId') || undefined;
+          return expIdFromLobby ? sessionStorage.getItem(`playerId:${expIdFromLobby}`) || undefined : undefined;
+        } catch { return undefined; }
+      })();
+
       const room = await colyseusService.joinGame(
         roomId!,
-        role as 'experimenter' | 'player'
+        role as 'experimenter' | 'player',
+        role === 'player' ? rememberedId : undefined
       );
 
       setConnected(true);
+
+      // Initialize players from current state
+      try {
+        // MapSchema implements entries(); convert to JS Map
+        const entries = Array.from((room.state.players as any).entries()) as [string, PlayerState][];
+        setPlayers(new Map<string, PlayerState>(entries));
+      } catch {
+        setPlayers(new Map());
+      }
 
       // Listen for player assignment
       room.onMessage('player_connected', (message) => {
@@ -84,17 +104,23 @@ export default function GamePage() {
       });
 
       // Listen for player updates
-      room.state.players.onAdd = (player: any, key: string) => {
+      const offPlayersAdd = (room.state.players as any).onAdd?.((player: any, key: string) => {
         console.log('Player added:', key, player);
-      };
+        const entries = Array.from((room.state.players as any).entries()) as [string, PlayerState][];
+        setPlayers(new Map<string, PlayerState>(entries));
+      });
 
-      room.state.players.onChange = (_player: any, _key: string) => {
-        setPlayers(new Map(room.state.players));
-      };
+      const offPlayersChange = (room.state.players as any).onChange?.((_player: any, _key: string) => {
+        const entries = Array.from((room.state.players as any).entries()) as [string, PlayerState][];
+        setPlayers(new Map<string, PlayerState>(entries));
+      });
 
-      // Listen for chat messages
-      room.onMessage('chat_message', (message) => {
-        setChatMessages((prev) => [...prev, message]);
+      // Listen for chat history additions via Schema changes
+      (room.state.chatHistory as any).onAdd?.((msg: any) => {
+        setChatMessages((prev) => [
+          ...prev,
+          { id: msg.id, from: msg.fromPlayer, to: msg.toPlayer, content: msg.content, timestamp: msg.timestamp }
+        ]);
       });
 
       // Listen for phase start
@@ -122,6 +148,20 @@ export default function GamePage() {
         alert(`Error ${code}: ${message}`);
       });
 
+      // Clean up on leave
+      room.onLeave.once(() => {
+        offPlayersAdd && offPlayersAdd();
+        offPlayersChange && offPlayersChange();
+      });
+
+      // Also watch full-state changes to ensure players map stays in sync
+      room.state.onChange(() => {
+        try {
+          const entries = Array.from((room.state.players as any).entries()) as [string, PlayerState][];
+          setPlayers(new Map<string, PlayerState>(entries));
+        } catch {}
+      });
+
       // Request start if experimenter and waiting
       if (role === 'experimenter') {
         setTimeout(() => {
@@ -141,8 +181,9 @@ export default function GamePage() {
   };
 
   const handleSendChat = () => {
-    if (chatTarget && chatInput.trim()) {
-      colyseusService.sendChat(chatTarget, chatInput);
+    const target = selectedChat || chatTarget;
+    if (target && chatInput.trim()) {
+      colyseusService.sendChat(target, chatInput);
       setChatInput('');
     }
   };
@@ -157,6 +198,10 @@ export default function GamePage() {
 
   const myPlayer = players.get(myPlayerId);
   const otherPlayers = Array.from(players.values()).filter((p) => p.id !== myPlayerId);
+  const activeTarget = selectedChat || chatTarget;
+  const dmMessages = chatMessages.filter((m) => (
+    activeTarget && ((m.from === myPlayerId && m.to === activeTarget) || (m.from === activeTarget && m.to === myPlayerId))
+  ));
 
   return (
     <div style={{ padding: '1rem', minHeight: '100vh', background: '#f5f5f5' }}>
@@ -186,11 +231,11 @@ export default function GamePage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem' }}>
+      <div className="layout-2col">
         {/* Main Column */}
         <div>
           {/* Payoff Matrix */}
-          {payoffMatrix && (
+          {payoffMatrix && payoffMatrix.cooperate && payoffMatrix.defect && (
             <div className="card" style={{ marginBottom: '1rem' }}>
               <h3 style={{ marginBottom: '1rem' }}>Payoff Matrix</h3>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -244,56 +289,59 @@ export default function GamePage() {
           {/* Chat (Communication Phase) */}
           {phase === 'communication' && role === 'player' && (
             <div className="card">
-              <h3 style={{ marginBottom: '1rem' }}>Chat</h3>
-
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-                  Send message to:
-                </label>
-                <select
-                  value={chatTarget}
-                  onChange={(e) => setChatTarget(e.target.value)}
-                  style={{ width: '100%', marginBottom: '0.5rem' }}
-                >
-                  <option value="">Select player...</option>
-                  {otherPlayers.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{ marginBottom: '1rem', maxHeight: '200px', overflowY: 'auto', padding: '0.5rem', background: '#f9f9f9', borderRadius: '4px' }}>
-                {chatMessages.length === 0 ? (
-                  <p style={{ color: '#999', fontSize: '0.875rem', textAlign: 'center' }}>No messages yet</p>
-                ) : (
-                  chatMessages.map((msg, i) => (
-                    <div key={i} style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-                      <strong>{msg.from === myPlayerId ? 'You' : players.get(msg.from)?.name}:</strong>{' '}
-                      {msg.content}
+              <h3 style={{ marginBottom: '1rem' }}>Direct Messages</h3>
+              <div className="grid grid-2" style={{ gap: '1rem' }}>
+                <div className="card" style={{ padding: '0.75rem' }}>
+                  {otherPlayers.length === 0 ? (
+                    <p className="text-sm text-gray">No other players online</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {otherPlayers.map((p) => (
+                        <button
+                          key={p.id}
+                          className="secondary btn-full"
+                          style={{ background: (selectedChat || chatTarget) === p.id ? '#1976D2' : '#2196F3' }}
+                          onClick={() => { setSelectedChat(p.id); setChatTarget(p.id); }}
+                        >
+                          {p.name}
+                        </button>
+                      ))}
                     </div>
-                  ))
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSendChat()}
-                  placeholder="Type your message..."
-                  style={{ flex: 1 }}
-                  disabled={!chatTarget}
-                />
-                <button
-                  className="secondary"
-                  onClick={handleSendChat}
-                  disabled={!chatTarget || !chatInput.trim()}
-                >
-                  Send
-                </button>
+                  )}
+                </div>
+                <div>
+                  <div className="chat-panel" style={{ marginBottom: '0.5rem', padding: '0.5rem', background: '#f9f9f9', borderRadius: '4px' }}>
+                    {(!selectedChat && !chatTarget) ? (
+                      <p className="text-sm text-gray" style={{ textAlign: 'center' }}>Choose a player to start chatting</p>
+                    ) : dmMessages.length === 0 ? (
+                      <p className="text-sm text-gray" style={{ textAlign: 'center' }}>No messages yet</p>
+                    ) : (
+                      dmMessages.map((msg, i) => (
+                        <div key={i} style={{ marginBottom: '0.5rem', fontSize: '0.875rem', textAlign: msg.from === myPlayerId ? 'right' : 'left' }}>
+                          <strong>{msg.from === myPlayerId ? 'You' : players.get(msg.from)?.name}:</strong> {msg.content}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleSendChat()}
+                      placeholder={(selectedChat || chatTarget) ? `Message ${players.get((selectedChat || chatTarget))?.name}...` : 'Select a player to chat'}
+                      style={{ flex: 1 }}
+                      disabled={!(selectedChat || chatTarget)}
+                    />
+                    <button
+                      className="secondary"
+                      onClick={handleSendChat}
+                      disabled={!(selectedChat || chatTarget) || !chatInput.trim()}
+                    >
+                      Send
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -303,7 +351,7 @@ export default function GamePage() {
             <div className="card">
               <h3 style={{ marginBottom: '1rem' }}>Choose Your Action</h3>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="actions-grid" style={{ marginBottom: '1rem' }}>
                 <button
                   onClick={() => setSelectedAction('C')}
                   style={{
