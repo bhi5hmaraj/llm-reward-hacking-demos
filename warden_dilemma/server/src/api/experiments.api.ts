@@ -134,6 +134,41 @@ router.get('/experiments/:id', async (req: Request, res: Response) => {
 });
 
 /**
+ * Resolve short lobby code to experimentId
+ *
+ * GET /api/experiments/resolve/:code
+ */
+router.get('/experiments/resolve/:code', async (req: Request, res: Response) => {
+  try {
+    const { code } = req.params;
+    const target = (code || '').toUpperCase();
+
+    if (!target || target.length < 4) {
+      return res.status(400).json({ error: 'invalid code' });
+    }
+
+    const experiments = await listExperiments();
+    const match = experiments.find((exp: any) =>
+      typeof exp?.id === 'string' && exp.id.slice(-6).toUpperCase() === target
+    );
+
+    if (!match) {
+      return res.status(404).json({ error: 'not found' });
+    }
+
+    return res.json({
+      experimentId: match.id,
+      name: match.name,
+      lobbyCode: target,
+      status: match.status,
+    });
+  } catch (error) {
+    logger.error('Failed to resolve lobby code', error as Error, { code: req.params.code });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * Get experiment results (with analytics)
  *
  * GET /api/experiments/:id/results
