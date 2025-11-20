@@ -17,6 +17,11 @@ Goal: ship a minimal, opinionated kernel that lets developers build multiplayer 
 - Observability: pino logs + basic event trace per room (kept in Redis list, capped to N=1,000 entries).
 - Testing: vitest; headless simulator that plays a tiny sample game with two human stubs vs one rule-based AI.
 
+Implementation simplifications (explicitly in v0):
+- No kernel-level scheduler or observables. Use simple timers in the room (or a tiny ai-manager helper): one `setInterval` tick per AI seat during `communication` and `action`, and one `setTimeout` to finalize before deadline. Clear them on phase end.
+- DM gate = two counters, no plugin system: `maxDMsPerPhase` and `perTargetCooldownMs`. Enforced in the adapter/room before sending.
+- Single-shot final action: first valid `submitAction` wins; late duplicates are dropped.
+
 Non-goals (v0): multiple transports, persistent SQL event store, voice, complex moderation/guardrails, migrations, deep UI components.
 
 ## 2) Domain Interfaces (frozen for v0)
@@ -82,6 +87,12 @@ Action validation: Zod schemas per action type. Authorization via seat capabilit
 - Room creation requires: `maxSeats`, `phaseDurations`, `rateLimit` (optional), `seed` (optional).
 - Everything else is fixed in v0. Extensibility comes later via adapters/plugins.
 
+Agent-related fields (added for walking skeleton):
+- `agentsEnabled: boolean` (default false)
+- `seats[i].type: 'human' | 'agent'`
+- `dmGate?: { maxPerPhase?: number; perTargetCooldownMs?: number }` (defaults: 3 and 6000)
+- `finalizeGraceMs?: number` (default 2500)
+
 ## 7) Security Defaults
 - No roles in URLs. Seat-bound join tokens required to act or receive DMs.
 - Server discards late `submitAction` after deadline; first valid action per seat per round wins.
@@ -95,7 +106,8 @@ Action validation: Zod schemas per action type. Authorization via seat capabilit
 
 ## 9) Roadmap to v0.1 → v0.2
 - v0.1 (MVP): publish the three packages + example; docs for ports and adapter wiring.
-- v0.2: add `@actors/strategy-agents-openai` (Agents SDK), `@actors/assistant-copilotkit` example, export/report helpers.
+- v0.2: add `@actors/strategy-agents-openai` (Agents SDK) behind a flag; `@actors/assistant-copilotkit` example; export/report helpers.
+  - Consider kernel-level scheduler/observe and formal intent-gate only after v0.1 field validation.
 
 ## 10) What to measure
 - Time-to-first-game scaffold
@@ -103,3 +115,38 @@ Action validation: Zod schemas per action type. Authorization via seat capabilit
 - Error rate (rejected actions, late submissions)
 - Token and rate-limit violations per room
 
+---
+
+## Appendix A — MVP “Walking Skeleton” Wiring
+
+Minimal agent loop (server-side)
+- On phase start, compute `deadline = now + duration`.
+- Start `tick = setInterval(2000)` for each AI seat during phases where acting is allowed; on each tick read a compact seat-scoped snapshot and call `strategy.onPhase(snapshot, ctx)`.
+- DM gate: track `dmCountThisPhase` and a `lastDmTo[target]` timestamp map; block when count exceeds `maxPerPhase` or cooldown (`perTargetCooldownMs`) hasn’t elapsed.
+- Finalize: schedule `finalizeTimeout = setTimeout(deadline - finalizeGraceMs)` that submits the selected action once. Ignore duplicates.
+- On phase end: `clearInterval(tick)` and `clearTimeout(finalizeTimeout)`; reset counters.
+
+Pseudocode
+```ts
+function onPhaseStart(phase, seat) {
+  const deadline = Date.now() + phase.duration;
+  const tick = setInterval(async () => {
+    const snap = getSeatSnapshot(roomId, seat);
+    await strategy.onPhase(snap, ctx);
+  }, 2000);
+
+  const finalize = setTimeout(async () => {
+    if (submitted) return;
+    const snap = getSeatSnapshot(roomId, seat);
+    const choice = decideFinalChoice(snap);
+    await submitAction(choice); submitted = true;
+  }, Math.max(1000, deadline - Date.now() - (finalizeGraceMs || 2500)));
+
+  onPhaseEnd(() => { clearInterval(tick); clearTimeout(finalize); resetDmGate(); });
+}
+```
+
+Tests (fake timers)
+- Ensures exactly one final submission before the deadline.
+- DMs never exceed `maxPerPhase`; per-target cooldown respected.
+- Phase end cancels timers; no further actions occur post-deadline.

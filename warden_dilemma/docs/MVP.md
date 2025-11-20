@@ -8,6 +8,7 @@ Goal: deliver a minimal but complete end‑to‑end experience for running small
 
 - Experimenter (1): sets up a quick study with a small group (2–6 players), runs a few rounds, and exports basic results.
 - Players (2–6): join with a code, coordinate with DMs, and choose a single action per round.
+- Optional AI bot (0–2): fills seats using a simple rule‑based strategy to enable demos/tests without full attendance.
 
 ---
 
@@ -25,6 +26,7 @@ Goal: deliver a minimal but complete end‑to‑end experience for running small
 - DM chat: per‑player list + 1:1 thread (no group chat)
 - Tokens for secure join (no role in URL). Lobby creates tokens; GameRoom requires joinToken.
 - Responsive UI: mobile friendly palette + DM list → thread
+- AI seats (optional): rule‑based “walking skeleton” only (no LLM in MVP). Disabled by default; can mark a seat as `agent` to enable.
 
 Out of scope (for MVP)
 - k > 3, scripted rules, custom scripting
@@ -93,6 +95,10 @@ Adapters (kept simple)
   - onJoin requires joinToken; derive role and (for players) playerId from token map.
   - Phases with simple timers; compute composition and apply linear rule.
   - Append minimal in‑memory round snapshot for experimenter timeline.
+  - AI Strategy (optional): if a seat is `agent`, run a minimal continuous loop:
+    - Start a 2s tick during communication/action phases that calls a rule‑based `onPhase(snapshot)`.
+    - DM gate: max 3 initiated DMs per phase; 6s per‑target cooldown.
+    - Finalize at T−2.5s: submit one final action; ignore duplicates/late calls.
 
 - Persistence (Upstash REST)
   - Save experiment doc and final scores; round snapshots optional in MVP.
@@ -116,6 +122,7 @@ Adapters (kept simple)
 Unit
 - Lobby: requiredPlayers, isReady, experimenterConnected, start_game gated
 - Game: join with token, phase transitions, composition counting, payoff application, DM routing
+- AI: with fake timers, verify (a) at most 3 DMs sent per phase with cooldowns, (b) exactly one final action submitted before deadline.
 
 E2E (headless)
 - Create → join 2 players → Start → pick actions → confirm payoffs and scores → repeat once
@@ -134,7 +141,7 @@ Dev durations (fast mode)
 
 ## 10) Rollout Plan
 
-- Phase 0: lock the token join path (no role in URL), DM UI, linear rule, 2–3 bins, responsive
+- Phase 0: lock the token join path (no role in URL), DM UI, linear rule, 2–3 bins, responsive, optional rule‑based AI seat
 - Phase 1: persistence of per‑round snapshot; lobby experimenterSecret; basic export
 - Phase 2: typed schemas for RoundMatrix; histogram/timeline adapters; optional ternary plot for k=3
 
@@ -144,14 +151,14 @@ Dev durations (fast mode)
 
 - Players can still spoof experimenter in Lobby: token prevents GameRoom elevation; add experimenterSecret next
 - Long rounds slow testing: use fast durations in dev
-- DM spam: add simple rate limiting per session if needed
+- DM spam: simple DM gate in GameRoom (per‑phase quota + per‑target cooldown). Increase limits only after testing.
 
 ---
 
 ## 12) Timeline (example)
 
 - Day 1–2: linear rule wiring; token join end‑to‑end; DM UI
-- Day 3: lobby/create UX polish; responsive tweaks; fast durations; unit tests
+- Day 3: lobby/create UX polish; responsive tweaks; fast durations; unit tests; enable one `agent` seat with rule‑based loop
 - Day 4: headless E2E; export final scores; bug‑bash
 - Day 5: buffer + Phase 1 items (round snapshot persistence) if time
 
@@ -161,3 +168,16 @@ Dev durations (fast mode)
 
 - Complex scripted rules; k>3 general UIs; large‑N analytics; public dashboards; multi‑room orchestration; reconnection tokens beyond the current tab session (P1/P2)
 
+---
+
+## 14) Appendix — AI Strategy (Walking Skeleton)
+
+Minimal, pragmatic agent loop used only when a seat is marked `agent`:
+
+- Start of phase: compute `deadline = now + duration`.
+- Communication phase: every 2s, read a compact seat‑scoped snapshot and run a rule‑based `onPhase(snapshot)` that may initiate at most 3 DMs per phase with a 6s per‑target cooldown.
+- Action phase: every 2s, recompute a simple choice (e.g., follow last communicated plan; fallback to baseline).
+- Finalize: schedule one `setTimeout(deadline − 2500ms)` to submit the final action. First valid submission wins; ignore duplicates and late calls.
+- Phase end: clear the interval/timeout and reset DM counters.
+
+This proves continuous “think → act → finalize” in our current stack without adding kernel‑level schedulers or LLMs. We can later swap the rule‑based `onPhase` with an LLM‑backed strategy behind a feature flag.
