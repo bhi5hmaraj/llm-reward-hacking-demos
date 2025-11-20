@@ -34,6 +34,7 @@ export class LobbyState extends Schema {
   @type('string') experimentName: string = '';
   @type('number') requiredPlayers: number = 0;
   @type('boolean') isReady: boolean = false;
+  @type('boolean') experimenterConnected: boolean = false;
 
   @type([WaitingPlayer]) waitingPlayers = new ArraySchema<WaitingPlayer>();
 
