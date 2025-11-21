@@ -101,8 +101,11 @@ class AxelrodTournamentRunner(TournamentRunner):
         rankings = []
 
         for i, strategy_name in enumerate(results.ranked_names):
-            mean_score = results.scores[i]
-            cooperation = results.cooperation_rates[i]
+            # Get the original player index for this rank
+            player_index = results.ranking[i]
+
+            mean_score = results.scores[player_index]
+            cooperation = results.cooperating_rating[player_index]
 
             rankings.append({
                 "rank": i + 1,
