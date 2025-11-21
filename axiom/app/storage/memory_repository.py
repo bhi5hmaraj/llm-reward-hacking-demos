@@ -1,12 +1,12 @@
 """
-In-memory implementation of PolicyRepository
+In-memory implementations of storage repositories
 
 Fallback implementation for development or when Redis is not available.
 """
 
 from typing import List, Optional, Dict
 from datetime import datetime
-from .base import PolicyRepository
+from .base import PolicyRepository, ExperimentRepository, ExperimentRunRepository
 
 
 class InMemoryPolicyRepository(PolicyRepository):
@@ -143,3 +143,199 @@ class InMemoryPolicyRepository(PolicyRepository):
             True if exists, False otherwise
         """
         return policy_id in self._policies
+
+
+class InMemoryExperimentRepository(ExperimentRepository):
+    """
+    In-memory experiment repository
+
+    Stores experiments in a dictionary. Data is lost on restart.
+    """
+
+    def __init__(self):
+        """Initialize in-memory storage"""
+        self._experiments: Dict[str, Dict] = {}
+
+    async def create(
+        self,
+        experiment_id: str,
+        name: str,
+        hypothesis: str,
+        config: Dict,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None
+    ) -> Dict:
+        """Create a new experiment"""
+        experiment = {
+            "id": experiment_id,
+            "name": name,
+            "hypothesis": hypothesis,
+            "config": config,
+            "description": description or "",
+            "tags": tags or [],
+            "status": "draft",
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat()
+        }
+
+        self._experiments[experiment_id] = experiment
+        return experiment
+
+    async def get(self, experiment_id: str) -> Optional[Dict]:
+        """Get experiment by ID"""
+        return self._experiments.get(experiment_id)
+
+    async def list_all(
+        self,
+        status: Optional[str] = None,
+        tags: Optional[List[str]] = None
+    ) -> List[Dict]:
+        """List experiments with optional filtering"""
+        experiments = list(self._experiments.values())
+
+        # Filter by status
+        if status:
+            experiments = [e for e in experiments if e["status"] == status]
+
+        # Filter by tags (match any)
+        if tags:
+            experiments = [
+                e for e in experiments
+                if any(tag in e["tags"] for tag in tags)
+            ]
+
+        # Sort by creation date (newest first)
+        experiments.sort(key=lambda e: e.get("created_at", ""), reverse=True)
+
+        return experiments
+
+    async def update(
+        self,
+        experiment_id: str,
+        name: Optional[str] = None,
+        hypothesis: Optional[str] = None,
+        config: Optional[Dict] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        status: Optional[str] = None
+    ) -> Optional[Dict]:
+        """Update an existing experiment"""
+        experiment = self._experiments.get(experiment_id)
+        if not experiment:
+            return None
+
+        # Update fields
+        if name is not None:
+            experiment["name"] = name
+        if hypothesis is not None:
+            experiment["hypothesis"] = hypothesis
+        if config is not None:
+            experiment["config"] = config
+        if description is not None:
+            experiment["description"] = description
+        if tags is not None:
+            experiment["tags"] = tags
+        if status is not None:
+            experiment["status"] = status
+
+        experiment["updated_at"] = datetime.utcnow().isoformat()
+
+        return experiment
+
+    async def exists(self, experiment_id: str) -> bool:
+        """Check if experiment exists"""
+        return experiment_id in self._experiments
+
+
+class InMemoryExperimentRunRepository(ExperimentRunRepository):
+    """
+    In-memory experiment run repository
+
+    Stores runs in a dictionary. Data is lost on restart.
+    """
+
+    def __init__(self):
+        """Initialize in-memory storage"""
+        self._runs: Dict[str, Dict] = {}
+        self._experiment_runs: Dict[str, List[str]] = {}  # experiment_id -> list of run_ids
+
+    async def create(
+        self,
+        run_id: str,
+        experiment_id: str,
+        run_number: int,
+        config_snapshot: Dict
+    ) -> Dict:
+        """Create a new experiment run"""
+        run = {
+            "id": run_id,
+            "experiment_id": experiment_id,
+            "run_number": run_number,
+            "status": "pending",
+            "config_snapshot": config_snapshot,
+            "results": None,
+            "error": None,
+            "started_at": datetime.utcnow().isoformat(),
+            "completed_at": None,
+            "duration_seconds": None
+        }
+
+        self._runs[run_id] = run
+
+        # Add to experiment's run list
+        if experiment_id not in self._experiment_runs:
+            self._experiment_runs[experiment_id] = []
+        self._experiment_runs[experiment_id].append(run_id)
+
+        return run
+
+    async def get(self, run_id: str) -> Optional[Dict]:
+        """Get run by ID"""
+        return self._runs.get(run_id)
+
+    async def list_by_experiment(self, experiment_id: str) -> List[Dict]:
+        """List all runs for an experiment, sorted by run_number"""
+        run_ids = self._experiment_runs.get(experiment_id, [])
+
+        runs = [self._runs[run_id] for run_id in run_ids if run_id in self._runs]
+
+        # Sort by run_number
+        runs.sort(key=lambda r: r["run_number"])
+
+        return runs
+
+    async def update_status(
+        self,
+        run_id: str,
+        status: str,
+        results: Optional[Dict] = None,
+        error: Optional[Dict] = None
+    ) -> Optional[Dict]:
+        """Update run status and results"""
+        run = self._runs.get(run_id)
+        if not run:
+            return None
+
+        # Update fields
+        run["status"] = status
+
+        if results is not None:
+            run["results"] = results
+
+        if error is not None:
+            run["error"] = error
+
+        # Update completion time if completed or failed
+        if status in ["completed", "failed"]:
+            run["completed_at"] = datetime.utcnow().isoformat()
+
+            # Calculate duration
+            started = datetime.fromisoformat(run["started_at"])
+            completed = datetime.utcnow()
+            run["duration_seconds"] = (completed - started).total_seconds()
+
+        return run
+
+    async def get_run_count(self, experiment_id: str) -> int:
+        """Count runs for an experiment"""
+        return len(self._experiment_runs.get(experiment_id, []))
