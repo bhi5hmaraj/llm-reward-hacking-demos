@@ -116,3 +116,200 @@ class PolicyRepository(ABC):
             True if exists, False otherwise
         """
         pass
+
+
+class ExperimentRepository(ABC):
+    """
+    Abstract repository for experiments
+
+    Experiments are permanent research records (no delete).
+    """
+
+    @abstractmethod
+    async def create(
+        self,
+        experiment_id: str,
+        name: str,
+        hypothesis: str,
+        config: Dict,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None
+    ) -> Dict:
+        """
+        Create a new experiment
+
+        Args:
+            experiment_id: Unique experiment identifier
+            name: Experiment name
+            hypothesis: Research hypothesis
+            config: Experiment configuration
+            description: Optional description
+            tags: Optional tags
+
+        Returns:
+            Created experiment dict
+        """
+        pass
+
+    @abstractmethod
+    async def get(self, experiment_id: str) -> Optional[Dict]:
+        """
+        Get experiment by ID
+
+        Args:
+            experiment_id: Experiment identifier
+
+        Returns:
+            Experiment dict or None if not found
+        """
+        pass
+
+    @abstractmethod
+    async def list_all(
+        self,
+        status: Optional[str] = None,
+        tags: Optional[List[str]] = None
+    ) -> List[Dict]:
+        """
+        List experiments with optional filtering
+
+        Args:
+            status: Filter by status (draft, running, completed, failed)
+            tags: Filter by tags (match any)
+
+        Returns:
+            List of experiment dicts
+        """
+        pass
+
+    @abstractmethod
+    async def update(
+        self,
+        experiment_id: str,
+        name: Optional[str] = None,
+        hypothesis: Optional[str] = None,
+        config: Optional[Dict] = None,
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        status: Optional[str] = None
+    ) -> Optional[Dict]:
+        """
+        Update an existing experiment
+
+        Args:
+            experiment_id: Experiment identifier
+            name: New name (optional)
+            hypothesis: New hypothesis (optional)
+            config: New config (optional)
+            description: New description (optional)
+            tags: New tags (optional)
+            status: New status (optional)
+
+        Returns:
+            Updated experiment dict or None if not found
+        """
+        pass
+
+    @abstractmethod
+    async def exists(self, experiment_id: str) -> bool:
+        """
+        Check if experiment exists
+
+        Args:
+            experiment_id: Experiment identifier
+
+        Returns:
+            True if exists, False otherwise
+        """
+        pass
+
+
+class ExperimentRunRepository(ABC):
+    """
+    Abstract repository for experiment runs
+
+    Each run is a single execution of an experiment.
+    """
+
+    @abstractmethod
+    async def create(
+        self,
+        run_id: str,
+        experiment_id: str,
+        run_number: int,
+        config_snapshot: Dict
+    ) -> Dict:
+        """
+        Create a new experiment run
+
+        Args:
+            run_id: Unique run identifier
+            experiment_id: Parent experiment ID
+            run_number: Run sequence number
+            config_snapshot: Snapshot of experiment config at run time
+
+        Returns:
+            Created run dict
+        """
+        pass
+
+    @abstractmethod
+    async def get(self, run_id: str) -> Optional[Dict]:
+        """
+        Get run by ID
+
+        Args:
+            run_id: Run identifier
+
+        Returns:
+            Run dict or None if not found
+        """
+        pass
+
+    @abstractmethod
+    async def list_by_experiment(self, experiment_id: str) -> List[Dict]:
+        """
+        List all runs for an experiment
+
+        Args:
+            experiment_id: Experiment identifier
+
+        Returns:
+            List of run dicts, sorted by run_number
+        """
+        pass
+
+    @abstractmethod
+    async def update_status(
+        self,
+        run_id: str,
+        status: str,
+        results: Optional[Dict] = None,
+        error: Optional[Dict] = None
+    ) -> Optional[Dict]:
+        """
+        Update run status and results
+
+        Args:
+            run_id: Run identifier
+            status: New status (pending, running, completed, failed)
+            results: Tournament results (optional)
+            error: Error info if failed (optional)
+
+        Returns:
+            Updated run dict or None if not found
+        """
+        pass
+
+    @abstractmethod
+    async def get_run_count(self, experiment_id: str) -> int:
+        """
+        Count runs for an experiment
+
+        Args:
+            experiment_id: Experiment identifier
+
+        Returns:
+            Number of runs
+        """
+        pass
