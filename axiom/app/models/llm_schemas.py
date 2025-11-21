@@ -25,6 +25,10 @@ class LLMActionRequest(BaseModel):
         None,
         description="Custom system prompt (optional)"
     )
+    policy_id: Optional[str] = Field(
+        None,
+        description="Policy ID to apply strategy modifications (optional)"
+    )
     temperature: float = Field(
         default=0.7,
         ge=0.0,

@@ -14,6 +14,9 @@ matplotlib==3.9.2
 openai==1.54.0
 anthropic==0.39.0
 
+# Storage (optional - falls back to in-memory if not available)
+redis==5.0.1
+
 # Utilities
 httpx==0.27.2
 python-dotenv==1.0.1
