@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
 from .core.config import settings
-from .api import health, equilibrium, strategies, tournament, llm_agents
+from .api import health, equilibrium, strategies, tournament, llm_agents, policies
 
 # Create FastAPI app
 app = FastAPI(
@@ -35,6 +35,7 @@ app.include_router(equilibrium.router)
 app.include_router(strategies.router)
 app.include_router(tournament.router)
 app.include_router(llm_agents.router)
+app.include_router(policies.router)
 
 # Serve static files (built Svelte frontend)
 static_dir = Path(__file__).parent.parent / "static"
@@ -60,6 +61,7 @@ else:
                 "equilibrium": "/equilibrium",
                 "strategies": "/strategies",
                 "tournament": "/tournament",
-                "llm": "/llm"
+                "llm": "/llm",
+                "policies": "/policies"
             }
         }

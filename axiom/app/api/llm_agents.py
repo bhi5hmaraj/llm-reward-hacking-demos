@@ -9,6 +9,7 @@ from ..models.llm_schemas import (
     LLMActionResponse
 )
 from ..services.llm_strategy import llm_strategy_service
+from ..services.policy_service import policy_service
 
 router = APIRouter(prefix="/llm", tags=["LLM Agents"])
 
@@ -37,6 +38,8 @@ async def llm_play_action(request: LLMActionRequest):
     The LLM will analyze the game history and generate a strategic action
     (Cooperate or Defect) with reasoning.
 
+    Optionally apply a policy to modify the LLM's strategic behavior.
+
     Args:
         request: LLM configuration and game history
 
@@ -51,21 +54,49 @@ async def llm_play_action(request: LLMActionRequest):
           "history": [
             {"round": 1, "my_action": "C", "opponent_action": "D"}
           ],
+          "policy_id": "uuid-of-policy",
           "temperature": 0.7
         }
         ```
     """
     try:
+        system_prompt = request.system_prompt
+
+        # Apply policy if specified
+        if request.policy_id:
+            policy = await policy_service.get(request.policy_id)
+            if not policy:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Policy '{request.policy_id}' not found"
+                )
+
+            # Get base prompt from provider or use existing system_prompt
+            if not system_prompt:
+                # Get default prompt from LLM service
+                provider = llm_strategy_service.registry.get(request.provider)
+                if provider:
+                    system_prompt = provider.get_default_system_prompt()
+
+            # Apply policy to system prompt
+            if system_prompt:
+                system_prompt = policy_service.apply_policy(
+                    system_prompt,
+                    policy["text"]
+                )
+
         result = await llm_strategy_service.generate_action(
             provider=request.provider,
             model=request.model,
             history=request.history,
-            system_prompt=request.system_prompt,
+            system_prompt=system_prompt,
             temperature=request.temperature
         )
 
         return LLMActionResponse(**result)
 
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
