@@ -3,8 +3,10 @@ Experiment management endpoints
 """
 
 import uuid
+import logging
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from ..core.logging import get_logger
 from ..models.experiment_schemas import (
     ExperimentCreate,
     ExperimentUpdate,
@@ -18,6 +20,7 @@ from ..services.experiment_service import experiment_service
 from ..workers.experiment_worker import execute_experiment_run, execute_experiment_batch
 
 router = APIRouter(prefix="/experiments", tags=["Experiments"])
+logger = get_logger(__name__, level=logging.DEBUG)
 
 
 @router.post("/", response_model=Experiment, status_code=201)
@@ -267,9 +270,12 @@ async def execute_run(
 
     Returns run status and results when completed.
     """
+    logger.info(f"[API] Execute run request: experiment_id={experiment_id}, run_id={run_id}")
+
     # Verify experiment exists
     experiment = await experiment_service.get_experiment(experiment_id)
     if not experiment:
+        logger.warning(f"[API] Experiment not found: {experiment_id}")
         raise HTTPException(
             status_code=404,
             detail=f"Experiment '{experiment_id}' not found"
@@ -278,6 +284,7 @@ async def execute_run(
     # Verify run exists
     run = await experiment_service.get_run(run_id)
     if not run:
+        logger.warning(f"[API] Run not found: {run_id}")
         raise HTTPException(
             status_code=404,
             detail=f"Run '{run_id}' not found"
@@ -285,6 +292,7 @@ async def execute_run(
 
     # Verify run belongs to experiment
     if run["experiment_id"] != experiment_id:
+        logger.warning(f"[API] Run {run_id} does not belong to experiment {experiment_id}")
         raise HTTPException(
             status_code=404,
             detail=f"Run '{run_id}' does not belong to experiment '{experiment_id}'"
@@ -292,13 +300,16 @@ async def execute_run(
 
     # Verify run is in pending status
     if run["status"] != "pending":
+        logger.warning(f"[API] Run {run_id} is already {run['status']}, cannot execute")
         raise HTTPException(
             status_code=400,
             detail=f"Run is already {run['status']}. Only pending runs can be executed."
         )
 
     # Queue background task
+    logger.info(f"[API] Queueing background task for run: {run_id}")
     background_tasks.add_task(execute_experiment_run, run_id)
+    logger.debug(f"[API] Background task queued successfully for run: {run_id}")
 
     return {
         "message": "Execution queued",
@@ -337,9 +348,12 @@ async def execute_all_runs(
 
     Returns count of queued runs.
     """
+    logger.info(f"[API] Execute all runs request: experiment_id={experiment_id}")
+
     # Verify experiment exists
     experiment = await experiment_service.get_experiment(experiment_id)
     if not experiment:
+        logger.warning(f"[API] Experiment not found: {experiment_id}")
         raise HTTPException(
             status_code=404,
             detail=f"Experiment '{experiment_id}' not found"
@@ -347,11 +361,14 @@ async def execute_all_runs(
 
     # Get all runs
     runs = await experiment_service.list_runs(experiment_id)
+    logger.debug(f"[API] Found {len(runs)} total runs for experiment {experiment_id}")
 
     # Filter for pending runs
     pending_runs = [r for r in runs if r["status"] == "pending"]
+    logger.info(f"[API] Found {len(pending_runs)} pending runs to execute")
 
     if not pending_runs:
+        logger.info(f"[API] No pending runs to execute for experiment {experiment_id}")
         return {
             "message": "No pending runs to execute",
             "experiment_id": experiment_id,
@@ -360,9 +377,12 @@ async def execute_all_runs(
 
     # Queue each run as separate background task
     # This allows concurrent execution
+    logger.info(f"[API] Queueing {len(pending_runs)} runs for concurrent execution")
     for run in pending_runs:
         background_tasks.add_task(execute_experiment_run, run["id"])
+        logger.debug(f"[API] Queued run: {run['id']}")
 
+    logger.info(f"[API] Successfully queued {len(pending_runs)} runs")
     return {
         "message": f"Queued {len(pending_runs)} runs for execution",
         "experiment_id": experiment_id,

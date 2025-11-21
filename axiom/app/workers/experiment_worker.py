@@ -10,10 +10,15 @@ Follows SOLID principles:
 """
 
 import asyncio
+import logging
 from typing import Dict, Optional
 from datetime import datetime
+from ..core.logging import get_logger
 from ..services.experiment_service import experiment_service, ExperimentService
 from ..services.axelrod_service import axelrod_service, AxelrodService
+
+# Configure logging
+logger = get_logger(__name__, level=logging.DEBUG)
 
 
 async def execute_experiment_run(
@@ -40,55 +45,70 @@ async def execute_experiment_run(
         This function is designed to run in FastAPI BackgroundTasks.
         All exceptions are caught and stored in the run record.
     """
+    logger.info(f"[WORKER] Starting execution for run_id: {run_id}")
+
     # Use singleton services if not provided (Dependency Injection)
     exp_service = experiment_svc or experiment_service
     axl_service = axelrod_svc or axelrod_service
 
     # Get run details
+    logger.debug(f"[WORKER] Fetching run details for: {run_id}")
     run = await exp_service.get_run(run_id)
     if not run:
         # Run not found - this shouldn't happen, but handle gracefully
+        logger.error(f"[WORKER] Run not found: {run_id}")
         return
 
+    logger.info(f"[WORKER] Run found. Experiment ID: {run['experiment_id']}, Status: {run['status']}")
+
     # Update status to running
+    logger.debug(f"[WORKER] Updating run status to 'running': {run_id}")
     await exp_service.update_run_status(run_id, "running")
 
     try:
         # Load configuration snapshot
         config = run["config_snapshot"]
+        logger.debug(f"[WORKER] Loaded config: {config}")
 
         # Extract tournament parameters
         classical_strategies = config.get("classical_strategies", [])
         turns = config.get("turns", 200)
         repetitions = config.get("repetitions", 10)
 
+        logger.info(f"[WORKER] Tournament params: strategies={classical_strategies}, turns={turns}, repetitions={repetitions}")
+
         # Note: LLM strategies not yet implemented in Phase 1
         # Future: Handle llm_strategy config when LLM integration complete
         if "llm_strategy" in config:
             # Placeholder for future LLM strategy integration
             # For now, just run with classical strategies
-            pass
+            logger.debug("[WORKER] LLM strategy in config (not yet implemented)")
 
         # Validate strategies exist
         if not classical_strategies:
             raise ValueError("No classical strategies specified in config")
 
         # Run tournament using AxelrodService
+        logger.info(f"[WORKER] Starting tournament execution...")
         results = axl_service.run_tournament(
             strategy_names=classical_strategies,
             turns=turns,
             repetitions=repetitions
         )
+        logger.info(f"[WORKER] Tournament completed. Results keys: {list(results.keys())}")
 
         # Store results and mark as completed
+        logger.debug(f"[WORKER] Updating run status to 'completed': {run_id}")
         await exp_service.update_run_status(
             run_id=run_id,
             status="completed",
             results=results
         )
+        logger.info(f"[WORKER] Run completed successfully: {run_id}")
 
     except Exception as e:
         # Store error and mark as failed
+        logger.error(f"[WORKER] Run failed: {run_id}. Error: {type(e).__name__}: {str(e)}")
         error_info = {
             "message": str(e),
             "type": type(e).__name__,
@@ -100,6 +120,7 @@ async def execute_experiment_run(
             status="failed",
             error=error_info
         )
+        logger.debug(f"[WORKER] Run status updated to 'failed': {run_id}")
 
 
 async def execute_experiment_batch(
