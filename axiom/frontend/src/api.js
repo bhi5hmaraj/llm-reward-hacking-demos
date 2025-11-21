@@ -55,3 +55,22 @@ export async function healthCheck() {
   if (!response.ok) throw new Error('Health check failed');
   return response.json();
 }
+
+export async function listLLMModels() {
+  const response = await fetch(`${API_URL}/llm/models`);
+  if (!response.ok) throw new Error('Failed to fetch LLM models');
+  return response.json();
+}
+
+export async function llmPlayAction(request) {
+  const response = await fetch(`${API_URL}/llm/play`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request)
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to generate LLM action');
+  }
+  return response.json();
+}

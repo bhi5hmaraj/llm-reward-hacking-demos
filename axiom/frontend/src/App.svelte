@@ -4,6 +4,7 @@
   import EquilibriumCalculator from './components/EquilibriumCalculator.svelte';
   import TournamentRunner from './components/TournamentRunner.svelte';
   import StrategyAnalyzer from './components/StrategyAnalyzer.svelte';
+  import LLMPlayground from './components/LLMPlayground.svelte';
   import { healthCheck } from './api.js';
 
   let activeTab = 'playground';
@@ -22,6 +23,7 @@
 
   const tabs = [
     { id: 'playground', label: 'Strategy Playground', icon: '🎮' },
+    { id: 'llm', label: 'LLM Playground', icon: '🤖' },
     { id: 'equilibrium', label: 'Nash Equilibrium', icon: '⚖️' },
     { id: 'tournament', label: 'Tournament', icon: '🏆' },
     { id: 'analyzer', label: 'Strategy Analyzer', icon: '📊' }
@@ -61,6 +63,8 @@
     <main>
       {#if activeTab === 'playground'}
         <StrategyPlayground />
+      {:else if activeTab === 'llm'}
+        <LLMPlayground />
       {:else if activeTab === 'equilibrium'}
         <EquilibriumCalculator />
       {:else if activeTab === 'tournament'}

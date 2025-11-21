@@ -1,24 +1,66 @@
 """
 Axelrod strategy service
-Provides access to 200+ IPD strategies and tournament functionality
+
+Refactored to follow SOLID principles with dependency injection.
+Uses AxelrodStrategyProvider, AxelrodTournamentRunner, and AxelrodStrategyAnalyzer.
 """
 
-import axelrod as axl
 from typing import List, Dict, Optional, Tuple
 from ..models.schemas import ActionHistory
+from .game_theory import (
+    StrategyProvider,
+    TournamentRunner,
+    StrategyAnalyzer,
+    AxelrodStrategyProvider,
+    AxelrodTournamentRunner,
+    AxelrodStrategyAnalyzer
+)
 
 
 class AxelrodService:
-    """Service for managing Axelrod strategies"""
+    """
+    Service for managing Axelrod strategies
 
-    def __init__(self):
-        """Initialize with all available strategies"""
-        self.all_strategies = axl.all_strategies
-        self.strategy_instances: Dict[str, axl.Player] = {}
+    Single Responsibility: Orchestrates strategy operations
+    Dependency Inversion: Depends on abstractions (StrategyProvider, etc.)
+    Open/Closed: New implementations can be injected without modifying this class
+    """
 
-    def list_strategies(self, filter_basic: bool = False) -> List[Dict[str, any]]:
+    def __init__(
+        self,
+        strategy_provider: Optional[StrategyProvider] = None,
+        tournament_runner: Optional[TournamentRunner] = None,
+        strategy_analyzer: Optional[StrategyAnalyzer] = None
+    ):
+        """
+        Initialize service with dependencies
+
+        Args:
+            strategy_provider: Provider for strategy management
+                              (defaults to AxelrodStrategyProvider)
+            tournament_runner: Runner for tournaments
+                              (defaults to AxelrodTournamentRunner)
+            strategy_analyzer: Analyzer for strategy behavior
+                              (defaults to AxelrodStrategyAnalyzer)
+        """
+        # Create default Axelrod provider if not provided
+        self.strategy_provider = strategy_provider or AxelrodStrategyProvider()
+
+        # Create default tournament runner with the provider
+        self.tournament_runner = tournament_runner or AxelrodTournamentRunner(
+            self.strategy_provider
+        )
+
+        # Create default analyzer with the provider
+        self.strategy_analyzer = strategy_analyzer or AxelrodStrategyAnalyzer(
+            self.strategy_provider
+        )
+
+    def list_strategies(self, filter_basic: bool = False) -> List[Dict]:
         """
         List all available strategies
+
+        Delegates to strategy provider.
 
         Args:
             filter_basic: If True, only return well-known basic strategies
@@ -26,29 +68,13 @@ class AxelrodService:
         Returns:
             List of strategy information
         """
-        if filter_basic:
-            basic_names = [
-                "Cooperator", "Defector", "TitForTat", "TitForTwoTats",
-                "Grudger", "Pavlov", "Random", "AlternatingCooperator",
-                "AlternatingDefector", "SuspiciousTitForTat", "Joss",
-                "GTFT", "HardMajority", "SoftMajority"
-            ]
-            strategies = [s for s in self.all_strategies if s.__name__ in basic_names]
-        else:
-            strategies = self.all_strategies
+        return self.strategy_provider.list_strategies(filter_basic)
 
-        return [
-            {
-                "name": strategy.__name__,
-                "classifier": strategy.classifier if hasattr(strategy, 'classifier') else {},
-                "docstring": strategy.__doc__ or "No description available"
-            }
-            for strategy in strategies
-        ]
-
-    def get_strategy(self, strategy_name: str) -> Optional[axl.Player]:
+    def get_strategy(self, strategy_name: str):
         """
         Get a strategy instance by name
+
+        Delegates to strategy provider.
 
         Args:
             strategy_name: Name of the strategy
@@ -56,12 +82,7 @@ class AxelrodService:
         Returns:
             Strategy instance or None if not found
         """
-        # Try to find strategy by name
-        for strategy_class in self.all_strategies:
-            if strategy_class.__name__.lower() == strategy_name.lower():
-                return strategy_class()
-
-        return None
+        return self.strategy_provider.get_strategy(strategy_name)
 
     def play_action(
         self,
@@ -72,6 +93,8 @@ class AxelrodService:
         """
         Get action from a strategy given history
 
+        Delegates to strategy provider.
+
         Args:
             strategy_name: Name of strategy to use
             history: Game history
@@ -79,71 +102,15 @@ class AxelrodService:
 
         Returns:
             Tuple of (action, reasoning)
+
+        Raises:
+            ValueError: If strategy not found
         """
-        strategy = self.get_strategy(strategy_name)
-
-        if not strategy:
-            raise ValueError(f"Strategy '{strategy_name}' not found")
-
-        # Convert history to Axelrod format
-        if history:
-            # Axelrod uses C and D actions
-            my_actions = [axl.Action.C if h.my_action == "C" else axl.Action.D for h in history]
-            opp_actions = [axl.Action.C if h.opponent_action == "C" else axl.Action.D for h in history]
-
-            # Set history on strategy
-            strategy.history = my_actions
-            opponent = axl.Player()
-            opponent.history = opp_actions
-
-            # Get next action
-            action = strategy.strategy(opponent)
-        else:
-            # First move
-            action = strategy.strategy(axl.Player())
-
-        action_str = "C" if action == axl.Action.C else "D"
-
-        # Generate reasoning based on strategy type
-        reasoning = self._generate_reasoning(strategy, history, action_str)
-
-        return action_str, reasoning
-
-    def _generate_reasoning(
-        self,
-        strategy: axl.Player,
-        history: List[ActionHistory],
-        action: str
-    ) -> str:
-        """Generate human-readable reasoning for action"""
-
-        strategy_name = strategy.__class__.__name__
-
-        if not history:
-            return f"{strategy_name}: First move, following initial strategy"
-
-        last_opp_action = history[-1].opponent_action
-
-        # Strategy-specific reasoning
-        if strategy_name == "TitForTat":
-            return f"TitForTat: Copying opponent's last action ({last_opp_action})"
-        elif strategy_name == "Cooperator":
-            return "Cooperator: Always cooperate"
-        elif strategy_name == "Defector":
-            return "Defector: Always defect"
-        elif strategy_name == "Grudger":
-            has_defected = any(h.opponent_action == "D" for h in history)
-            if has_defected:
-                return "Grudger: Opponent defected before, retaliating forever"
-            return "Grudger: Cooperating while opponent cooperates"
-        elif strategy_name == "Pavlov":
-            last_my_action = history[-1].my_action
-            if (last_my_action == last_opp_action):
-                return "Pavlov: Both took same action last round, repeating my action"
-            else:
-                return "Pavlov: Actions differed last round, switching"
-        else:
-            return f"{strategy_name}: Following strategy logic based on history"
+        return self.strategy_provider.play_action(
+            strategy_name,
+            history,
+            opponent_id
+        )
 
     def run_tournament(
         self,
@@ -154,6 +121,8 @@ class AxelrodService:
         """
         Run a tournament between strategies
 
+        Delegates to tournament runner.
+
         Args:
             strategy_names: List of strategy names
             turns: Number of turns per match
@@ -161,48 +130,15 @@ class AxelrodService:
 
         Returns:
             Tournament results
+
+        Raises:
+            ValueError: If any strategy not found
         """
-        # Create strategy instances
-        players = []
-        for name in strategy_names:
-            strategy = self.get_strategy(name)
-            if strategy:
-                players.append(strategy)
-            else:
-                raise ValueError(f"Strategy '{name}' not found")
-
-        # Run tournament
-        tournament = axl.Tournament(
-            players,
-            turns=turns,
-            repetitions=repetitions
+        return self.tournament_runner.run_tournament(
+            strategy_names,
+            turns,
+            repetitions
         )
-
-        results = tournament.play(processes=1)  # Single process for consistency
-
-        # Extract rankings
-        rankings = []
-        for i, score in enumerate(results.ranked_names):
-            strategy_name = score
-            mean_score = results.scores[i]
-            cooperation = results.cooperation_rates[i]
-
-            rankings.append({
-                "rank": i + 1,
-                "strategy": strategy_name,
-                "score": float(mean_score),
-                "cooperation_rate": float(cooperation)
-            })
-
-        return {
-            "rankings": rankings,
-            "total_matches": len(players) * (len(players) - 1) * repetitions,
-            "winner": rankings[0]["strategy"],
-            "cooperation_rates": {
-                r["strategy"]: r["cooperation_rate"]
-                for r in rankings
-            }
-        }
 
     def analyze_strategy(
         self,
@@ -212,58 +148,23 @@ class AxelrodService:
         """
         Analyze a strategy's behavior
 
+        Delegates to strategy analyzer.
+
         Args:
             strategy_name: Name of strategy to analyze
             turns: Number of turns for test matches
 
         Returns:
             Analysis results
+
+        Raises:
+            ValueError: If strategy not found
         """
-        strategy = self.get_strategy(strategy_name)
-        if not strategy:
-            raise ValueError(f"Strategy '{strategy_name}' not found")
-
-        # Test against key strategies
-        cooperator = axl.Cooperator()
-        defector = axl.Defector()
-        tit_for_tat = axl.TitForTat()
-
-        # Run matches
-        vs_coop = axl.Match([strategy(), cooperator], turns=turns).play()
-        vs_def = axl.Match([strategy(), defector], turns=turns).play()
-        vs_tft = axl.Match([strategy(), tit_for_tat], turns=turns).play()
-
-        # Calculate metrics
-        coop_score = sum(vs_coop[0])
-        def_score = sum(vs_def[0])
-        tft_score = sum(vs_tft[0])
-
-        # Cooperation rates
-        coop_rate_vs_coop = sum(1 for action in vs_coop[0] if action == axl.Action.C) / turns
-        coop_rate_vs_def = sum(1 for action in vs_def[0] if action == axl.Action.C) / turns
-        coop_rate_vs_tft = sum(1 for action in vs_tft[0] if action == axl.Action.C) / turns
-
-        overall_coop_rate = (coop_rate_vs_coop + coop_rate_vs_def + coop_rate_vs_tft) / 3
-
-        return {
-            "strategy_name": strategy_name,
-            "cooperation_rate": overall_coop_rate,
-            "average_score": (coop_score + def_score + tft_score) / 3,
-            "vs_cooperator": {
-                "score": coop_score,
-                "cooperation_rate": coop_rate_vs_coop
-            },
-            "vs_defector": {
-                "score": def_score,
-                "cooperation_rate": coop_rate_vs_def
-            },
-            "vs_tit_for_tat": {
-                "score": tft_score,
-                "cooperation_rate": coop_rate_vs_tft
-            },
-            "classifier": strategy.classifier if hasattr(strategy, 'classifier') else {}
-        }
+        return self.strategy_analyzer.analyze_strategy(
+            strategy_name,
+            turns
+        )
 
 
-# Singleton instance
+# Singleton instance with default dependencies
 axelrod_service = AxelrodService()
