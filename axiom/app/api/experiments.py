@@ -4,7 +4,7 @@ Experiment management endpoints
 
 import uuid
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from ..models.experiment_schemas import (
     ExperimentCreate,
     ExperimentUpdate,
@@ -15,6 +15,7 @@ from ..models.experiment_schemas import (
     ExperimentRunList
 )
 from ..services.experiment_service import experiment_service
+from ..workers.experiment_worker import execute_experiment_run, execute_experiment_batch
 
 router = APIRouter(prefix="/experiments", tags=["Experiments"])
 
@@ -238,3 +239,133 @@ async def get_experiment_run(experiment_id: str, run_id: str):
         )
 
     return ExperimentRun(**run)
+
+
+@router.post("/{experiment_id}/runs/{run_id}/execute")
+async def execute_run(
+    experiment_id: str,
+    run_id: str,
+    background_tasks: BackgroundTasks
+):
+    """
+    Execute an experiment run in the background
+
+    Queues the run for async execution. The run must be in 'pending' status.
+    Use GET /experiments/{experiment_id}/runs/{run_id} to poll for completion.
+
+    **Flow**:
+    1. Validates run exists and is pending
+    2. Queues execution task
+    3. Returns immediately with "queued" message
+    4. Background worker executes tournament
+    5. Run status updates to "running" → "completed"/"failed"
+
+    **Status Polling**:
+    ```
+    GET /experiments/{experiment_id}/runs/{run_id}
+    ```
+
+    Returns run status and results when completed.
+    """
+    # Verify experiment exists
+    experiment = await experiment_service.get_experiment(experiment_id)
+    if not experiment:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Experiment '{experiment_id}' not found"
+        )
+
+    # Verify run exists
+    run = await experiment_service.get_run(run_id)
+    if not run:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Run '{run_id}' not found"
+        )
+
+    # Verify run belongs to experiment
+    if run["experiment_id"] != experiment_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Run '{run_id}' does not belong to experiment '{experiment_id}'"
+        )
+
+    # Verify run is in pending status
+    if run["status"] != "pending":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Run is already {run['status']}. Only pending runs can be executed."
+        )
+
+    # Queue background task
+    background_tasks.add_task(execute_experiment_run, run_id)
+
+    return {
+        "message": "Execution queued",
+        "run_id": run_id,
+        "experiment_id": experiment_id,
+        "status": "queued"
+    }
+
+
+@router.post("/{experiment_id}/execute")
+async def execute_all_runs(
+    experiment_id: str,
+    background_tasks: BackgroundTasks
+):
+    """
+    Execute all pending runs for an experiment
+
+    Convenience endpoint that queues all pending runs for the experiment.
+    Each run is queued as a separate background task for concurrent execution.
+
+    **Example**:
+    ```bash
+    # Create experiment and runs
+    exp_id=$(curl -X POST /experiments -d '{...}' | jq -r '.id')
+    curl -X POST /experiments/$exp_id/runs?count=30
+
+    # Execute all runs
+    curl -X POST /experiments/$exp_id/execute
+    ```
+
+    **Monitoring Progress**:
+    ```bash
+    # Get all runs to check status
+    curl /experiments/$exp_id/runs
+    ```
+
+    Returns count of queued runs.
+    """
+    # Verify experiment exists
+    experiment = await experiment_service.get_experiment(experiment_id)
+    if not experiment:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Experiment '{experiment_id}' not found"
+        )
+
+    # Get all runs
+    runs = await experiment_service.list_runs(experiment_id)
+
+    # Filter for pending runs
+    pending_runs = [r for r in runs if r["status"] == "pending"]
+
+    if not pending_runs:
+        return {
+            "message": "No pending runs to execute",
+            "experiment_id": experiment_id,
+            "pending_count": 0
+        }
+
+    # Queue each run as separate background task
+    # This allows concurrent execution
+    for run in pending_runs:
+        background_tasks.add_task(execute_experiment_run, run["id"])
+
+    return {
+        "message": f"Queued {len(pending_runs)} runs for execution",
+        "experiment_id": experiment_id,
+        "queued_count": len(pending_runs),
+        "run_ids": [r["id"] for r in pending_runs]
+    }
