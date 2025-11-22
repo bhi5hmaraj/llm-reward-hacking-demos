@@ -10,6 +10,7 @@ import CreateExperimentPage from './pages/CreateExperimentPage';
 import LobbyPage from './pages/LobbyPage';
 import GamePage from './pages/GamePage';
 import ResultsPage from './pages/ResultsPage';
+import CustomScenarioPage from './pages/CustomScenarioPage';
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
             <nav style={{ display: 'flex', gap: '1.5rem' }}>
               <Link to="/" style={{ color: 'white', textDecoration: 'none' }}>Home</Link>
               <Link to="/create" style={{ color: 'white', textDecoration: 'none' }}>New Experiment</Link>
+              <Link to="/custom" style={{ color: 'white', textDecoration: 'none' }}>Custom Scenario</Link>
             </nav>
           </div>
         </header>
@@ -38,6 +40,7 @@ function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/create" element={<CreateExperimentPage />} />
+            <Route path="/custom" element={<CustomScenarioPage />} />
             <Route path="/lobby/:experimentId" element={<LobbyPage />} />
             <Route path="/game/:roomId" element={<GamePage />} />
             <Route path="/results/:experimentId" element={<ResultsPage />} />
