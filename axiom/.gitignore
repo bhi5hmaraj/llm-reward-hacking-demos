@@ -47,3 +47,7 @@ dmypy.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Build artifacts
+static/
+node_modules/
