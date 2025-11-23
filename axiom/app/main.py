@@ -3,13 +3,21 @@ Axiom - Game Theory Analysis Service
 FastAPI application entry point
 """
 
-from fastapi import FastAPI
+import logging
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
 from .core.config import settings
 from .api import health, equilibrium, strategies, tournament, llm_agents, policies, experiments
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Create FastAPI app
 app = FastAPI(
@@ -28,6 +36,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"Incoming request: {request.method} {request.url.path}")
+    logger.debug(f"Request headers: {dict(request.headers)}")
+
+    response = await call_next(request)
+
+    logger.info(f"Response status: {response.status_code} for {request.method} {request.url.path}")
+    return response
 
 # Include API routers
 app.include_router(health.router)
