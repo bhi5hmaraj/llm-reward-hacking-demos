@@ -79,7 +79,11 @@ class AxelrodStrategyAnalyzer(StrategyAnalyzer):
             match_results = match.play()
 
             # Calculate metrics
-            score = sum(match_results[0])
+            # match.final_score() returns tuple of (score_p1, score_p2)
+            # or we can use match.final_score_per_turn() for normalized scores
+            final_scores = match.final_score()
+            score = final_scores[0] if isinstance(final_scores, tuple) else final_scores
+
             coop_rate = sum(
                 1 for action in match_results[0]
                 if action == axl.Action.C
