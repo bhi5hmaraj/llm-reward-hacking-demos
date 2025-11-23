@@ -51,7 +51,7 @@ class AxelrodReasoningGenerator(ReasoningGenerator):
             "Cooperator": lambda: "Cooperator: Always cooperate",
             "Defector": lambda: "Defector: Always defect",
             "Grudger": lambda: self._grudger_reasoning(history),
-            "Pavlov": lambda: self._pavlov_reasoning(history),
+            "WinStayLoseShift": lambda: self._pavlov_reasoning(history),
         }
 
         return reasoning_map.get(
@@ -84,6 +84,12 @@ class AxelrodStrategyProvider(StrategyProvider):
     Manages 200+ IPD strategies from the Axelrod library.
     """
 
+    # Strategy name aliases for backwards compatibility
+    STRATEGY_ALIASES = {
+        "Pavlov": "WinStayLoseShift",
+        "pavlov": "WinStayLoseShift",
+    }
+
     def __init__(self, reasoning_generator: Optional[ReasoningGenerator] = None):
         """
         Initialize provider
@@ -108,7 +114,7 @@ class AxelrodStrategyProvider(StrategyProvider):
         if filter_basic:
             basic_names = [
                 "Cooperator", "Defector", "TitForTat", "TitForTwoTats",
-                "Grudger", "Pavlov", "Random", "AlternatingCooperator",
+                "Grudger", "WinStayLoseShift", "Random", "AlternatingCooperator",
                 "AlternatingDefector", "SuspiciousTitForTat", "Joss",
                 "GTFT", "HardMajority", "SoftMajority"
             ]
@@ -135,8 +141,11 @@ class AxelrodStrategyProvider(StrategyProvider):
         Returns:
             Strategy instance or None if not found
         """
+        # Check if this is an alias and resolve it
+        resolved_name = self.STRATEGY_ALIASES.get(strategy_name, strategy_name)
+
         for strategy_class in self.all_strategies:
-            if strategy_class.__name__.lower() == strategy_name.lower():
+            if strategy_class.__name__.lower() == resolved_name.lower():
                 return strategy_class()
 
         return None
