@@ -7,9 +7,12 @@ Follows SOLID principles:
 - Dependency Inversion: Depends on StrategyProvider abstraction
 """
 
+import logging
 import axelrod as axl
 from typing import List, Dict
 from .base import TournamentRunner, StrategyProvider
+
+logger = logging.getLogger(__name__)
 
 
 class AxelrodTournamentRunner(TournamentRunner):
@@ -56,16 +59,25 @@ class AxelrodTournamentRunner(TournamentRunner):
         Raises:
             ValueError: If any strategy is not found
         """
+        logger.info(f"Starting tournament with {len(strategy_names)} strategies: {strategy_names}")
+        logger.info(f"Tournament parameters: turns={turns}, repetitions={repetitions}")
+
         # Create strategy instances
         players = []
         for name in strategy_names:
+            logger.debug(f"Looking up strategy: {name}")
             strategy = self.strategy_provider.get_strategy(name)
             if strategy:
                 players.append(strategy)
+                logger.debug(f"Strategy '{name}' found and added")
             else:
+                logger.error(f"Strategy '{name}' not found")
                 raise ValueError(f"Strategy '{name}' not found")
 
+        logger.info(f"All {len(players)} strategies loaded successfully")
+
         # Run tournament
+        logger.info("Creating tournament...")
         tournament = axl.Tournament(
             players,
             turns=turns,
@@ -73,12 +85,16 @@ class AxelrodTournamentRunner(TournamentRunner):
         )
 
         # Execute tournament with single process for consistency
+        logger.info("Executing tournament (this may take a while)...")
         results = tournament.play(processes=1)
+        logger.info("Tournament execution completed")
 
         # Extract and format rankings
+        logger.info("Formatting rankings...")
         rankings = self._format_rankings(results)
+        logger.info(f"Rankings formatted. Winner: {rankings[0]['strategy']}")
 
-        return {
+        result_dict = {
             "rankings": rankings,
             "total_matches": len(players) * (len(players) - 1) * repetitions,
             "winner": rankings[0]["strategy"],
@@ -87,6 +103,9 @@ class AxelrodTournamentRunner(TournamentRunner):
                 for r in rankings
             }
         }
+
+        logger.debug(f"Tournament result: {result_dict}")
+        return result_dict
 
     def _format_rankings(self, results) -> List[Dict]:
         """
@@ -104,8 +123,14 @@ class AxelrodTournamentRunner(TournamentRunner):
             # Get the original player index for this rank
             player_index = results.ranking[i]
 
+            # scores and cooperating_rating can be arrays, take the mean
             mean_score = results.scores[player_index]
+            if isinstance(mean_score, (list, tuple)):
+                mean_score = sum(mean_score) / len(mean_score) if mean_score else 0.0
+
             cooperation = results.cooperating_rating[player_index]
+            if isinstance(cooperation, (list, tuple)):
+                cooperation = sum(cooperation) / len(cooperation) if cooperation else 0.0
 
             rankings.append({
                 "rank": i + 1,
