@@ -2,7 +2,9 @@
  * API client for Axiom backend
  */
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+// In production (built), frontend is served from the same origin as backend
+// In development, Vite proxy handles /api -> backend
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? '/api' : '');
 
 export async function listStrategies(basicOnly = false) {
   const response = await fetch(`${API_URL}/strategies?basic_only=${basicOnly}`);
